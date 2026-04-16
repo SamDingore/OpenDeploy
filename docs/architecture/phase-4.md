@@ -7,7 +7,7 @@ Phase 3 kept all public hostnames on the **platform-owned** DNS tree and let Cad
 Move from:
 
 - platform-managed hostnames only  
-- implicit platform TLS only for those names  
+- implicit platform TLS only for those names
 
 to:
 
@@ -15,15 +15,17 @@ to:
 - **CNAME + TXT** checks prove intent and reduce hijack risk before any edge config references the name  
 - **Caddy** still terminates TLS and proxies to **healthy** runtimes; hostnames enter the generated config only after verification and attach workflow  
 - **failures, retries, and rate limits** are classified and visible in the data model  
-- **detach** and **runtime teardown** remove custom routes without breaking platform hostnames  
+- **detach** and **runtime teardown** remove custom routes without breaking platform hostnames
 
 ## Split planes (unchanged)
 
-| Plane | Responsibility |
-|--------|----------------|
+
+| Plane       | Responsibility                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------- |
 | **Control** | `apps/api`, `apps/web`, Postgres, Prisma, Redis, BullMQ, auth, audit, domain/certificate services |
-| **Worker** | Builds, runtime provision/teardown, **domain queue** processors (call internal APIs) |
-| **Edge** | Caddy: TLS + reverse proxy from **validated** DB rows only |
+| **Worker**  | Builds, runtime provision/teardown, **domain queue** processors (call internal APIs)              |
+| **Edge**    | Caddy: TLS + reverse proxy from **validated** DB rows only                                        |
+
 
 ## Data model (Prisma)
 
@@ -40,9 +42,9 @@ New models:
 
 Statuses (subset of flow):
 
-1. `awaiting_verification` — user must publish DNS.  
-2. `verified` — checks passed; safe to attach.  
-3. `certificate_issuing` — route binding exists; edge reload in progress.  
+1. `awaiting_verification` — user must publish DNS.
+2. `verified` — checks passed; safe to attach.
+3. `certificate_issuing` — route binding exists; edge reload in progress.
 4. `active` — TLS probe (metadata) succeeded; traffic may flow if DNS points at the edge.
 
 Jobs (`domains` BullMQ queue):
@@ -55,35 +57,37 @@ Jobs (`domains` BullMQ queue):
 
 - all **attached** platform `RouteBinding` rows with a `PlatformHostname`, and  
 - **attached** custom-domain bindings whose `CustomDomain.status` is one of  
-  `certificate_issuing | certificate_active | certificate_renewing | active`.
+`certificate_issuing | certificate_active | certificate_renewing | active`.
 
 That mirrors an **allowlist**: names are not served merely because traffic arrived; they must be in an allowed DB state.
 
 ## API & UI
 
 - REST under  
-  `workspaces/:workspaceId/projects/:projectId/environments/:environmentId/custom-domains`  
-  (production-only enforcement in service).  
+`workspaces/:workspaceId/projects/:projectId/environments/:environmentId/custom-domains`  
+(production-only enforcement in service).  
 - Dashboard: **Custom domains** link from the project environments list (production).  
 - Panel: DNS instructions, recheck, attach to a **healthy active** release id, detach, retry issuance.
 
 ## Repository layout (new / moved)
 
-| Path | Role |
-|------|------|
-| `packages/db/prisma/schema.prisma` | `CustomDomain`, `DomainVerificationCheck`, `CertificateRecord`, `DomainEvent`; optional `RouteBinding.platformHostnameId` |
-| `packages/db/prisma/migrations/0003_phase4_custom_domains/` | SQL migration |
-| `packages/shared/src/custom-hostname.ts` | Normalization, apex/subdomain MVP rules, TXT name helper |
-| `packages/shared/src/domain-state-machine.ts` | Safe status transitions |
-| `packages/shared/src/domain-queue.ts` | `DOMAIN_QUEUE_NAME`, job payload typing |
-| `packages/shared/src/acme-error-classify.ts` | Rate limit vs transient vs DNS buckets |
-| `apps/api/src/edge/` | `EdgeModule`, `CaddyService` (platform + allowlisted custom routes) |
-| `apps/api/src/custom-domains/` | Public controller, DTOs, DNS verify helpers, TLS probe, service |
-| `apps/api/src/internal/internal-domains.controller.ts` | Worker callbacks (`INTERNAL_API_SECRET`) |
-| `apps/api/src/queue/domain-queue.service.ts` | BullMQ producers |
-| `apps/worker/src/domain-worker.ts` | Domain queue consumer |
-| `apps/web/.../environments/[environmentId]/custom-domains/` | Dashboard page |
-| `apps/web/components/custom-domains-panel.tsx` | Client UI |
+
+| Path                                                        | Role                                                                                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `packages/db/prisma/schema.prisma`                          | `CustomDomain`, `DomainVerificationCheck`, `CertificateRecord`, `DomainEvent`; optional `RouteBinding.platformHostnameId` |
+| `packages/db/prisma/migrations/0003_phase4_custom_domains/` | SQL migration                                                                                                             |
+| `packages/shared/src/custom-hostname.ts`                    | Normalization, apex/subdomain MVP rules, TXT name helper                                                                  |
+| `packages/shared/src/domain-state-machine.ts`               | Safe status transitions                                                                                                   |
+| `packages/shared/src/domain-queue.ts`                       | `DOMAIN_QUEUE_NAME`, job payload typing                                                                                   |
+| `packages/shared/src/acme-error-classify.ts`                | Rate limit vs transient vs DNS buckets                                                                                    |
+| `apps/api/src/edge/`                                        | `EdgeModule`, `CaddyService` (platform + allowlisted custom routes)                                                       |
+| `apps/api/src/custom-domains/`                              | Public controller, DTOs, DNS verify helpers, TLS probe, service                                                           |
+| `apps/api/src/internal/internal-domains.controller.ts`      | Worker callbacks (`INTERNAL_API_SECRET`)                                                                                  |
+| `apps/api/src/queue/domain-queue.service.ts`                | BullMQ producers                                                                                                          |
+| `apps/worker/src/domain-worker.ts`                          | Domain queue consumer                                                                                                     |
+| `apps/web/.../environments/[environmentId]/custom-domains/` | Dashboard page                                                                                                            |
+| `apps/web/components/custom-domains-panel.tsx`              | Client UI                                                                                                                 |
+
 
 ## Local / staging notes
 
@@ -91,11 +95,11 @@ That mirrors an **allowlist**: names are not served merely because traffic arriv
 - Set `CADDY_ADMIN_URL` and `CADDY_ACME_EMAIL` when testing real issuance.  
 - Worker must run so `domains` jobs and the periodic reconcile job execute.
 
-## Phase 5 (planned)
+## Phase 5 — Hardening and operations
 
-See the **Phase 5 TODO** section at the end of this document.
+Implemented as **Phase 5** (see `docs/architecture/phase-5.md`): node pools, rootless posture fields, OTel + queue trace propagation, reconcilers, workspace quotas, edge config versioning/rollback, and operator UI/API surfaces.
 
-### Phase 5 TODO
+Remaining **domain product** work (often better tracked as Phase 6+ alongside platform maturity):
 
 - **Re-verification**: periodic ownership re-checks; degrade or block routing if DNS drifts.  
 - **Apex + DNS-01**: explicit apex support with DNS-01 challenge plumbing (no HTTP-01 shortcut).  
@@ -103,5 +107,6 @@ See the **Phase 5 TODO** section at the end of this document.
 - **DNS provider integrations** (optional) for automated TXT/CNAME.  
 - **BYO certificate** upload and optional multi-CA / EAB.  
 - **ARI / renewal** alignment as ecosystem standards stabilize; richer cert inventory from edge.  
-- **Multi-instance Caddy**: atomic config distribution, health of edge fleet.  
+- **Multi-instance Caddy**: serialized publication across a fleet (Phase 5 introduces versioning; HA rollout continues).  
 - **Hostname abstraction** if platform + custom unification simplifies policy.
+

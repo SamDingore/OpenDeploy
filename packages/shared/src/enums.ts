@@ -41,6 +41,9 @@ export enum WorkerStatus {
   offline = 'offline',
   draining = 'draining',
   error = 'error',
+  degraded = 'degraded',
+  quarantined = 'quarantined',
+  retired = 'retired',
 }
 
 export enum WebhookProvider {

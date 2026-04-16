@@ -13,4 +13,5 @@ export interface DomainJobPayload {
   customDomainId?: string;
   /** For reconcile-all sweeps */
   sweep?: boolean;
+  traceCarrier?: Record<string, string>;
 }

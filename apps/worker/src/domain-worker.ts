@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import type IORedis from 'ioredis';
-import { DOMAIN_QUEUE_NAME, type DomainJobPayload } from '@opendeploy/shared';
+import { DOMAIN_QUEUE_NAME, runWithTraceCarrier, type DomainJobPayload } from '@opendeploy/shared';
 
 async function postInternal(api: string, secret: string, path: string): Promise<void> {
   const res = await fetch(`${api}${path}`, {
@@ -19,6 +19,7 @@ export function registerDomainWorkers(redis: IORedis, apiBase: string, secret: s
     DOMAIN_QUEUE_NAME,
     async (job) => {
       const data = job.data as DomainJobPayload;
+      await runWithTraceCarrier(data.traceCarrier, async () => {
       switch (data.kind) {
         case 'domain-verify':
           if (!data.customDomainId) return;
@@ -54,6 +55,7 @@ export function registerDomainWorkers(redis: IORedis, apiBase: string, secret: s
         default:
           break;
       }
+      });
     },
     { connection: redis, concurrency: 2 },
   );

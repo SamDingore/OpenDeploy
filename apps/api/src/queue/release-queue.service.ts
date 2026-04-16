@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import type { ReleaseJobPayload, ReleaseTeardownPayload } from '@opendeploy/shared';
+import {
+  createTraceCarrierFromActiveContext,
+  type ReleaseJobPayload,
+  type ReleaseTeardownPayload,
+} from '@opendeploy/shared';
 import { RELEASE_QUEUE, RELEASE_TEARDOWN_QUEUE } from './queue.module';
 
 @Injectable()
@@ -13,9 +17,10 @@ export class ReleaseQueueService {
   ) {}
 
   async enqueueProvision(releaseId: string): Promise<string> {
+    const traceCarrier = createTraceCarrierFromActiveContext();
     const job = await this.releaseQueue.add(
       'provision',
-      { releaseId, kind: 'provision' } satisfies ReleaseJobPayload,
+      { releaseId, kind: 'provision', traceCarrier } satisfies ReleaseJobPayload,
       {
         attempts: 5,
         backoff: { type: 'exponential', delay: 3000 },
@@ -28,7 +33,8 @@ export class ReleaseQueueService {
   }
 
   async enqueueTeardown(input: ReleaseTeardownPayload): Promise<string> {
-    const job = await this.teardownQueue.add('teardown', input, {
+    const traceCarrier = createTraceCarrierFromActiveContext();
+    const job = await this.teardownQueue.add('teardown', { ...input, traceCarrier }, {
       attempts: 4,
       backoff: { type: 'exponential', delay: 2000 },
       removeOnComplete: 200,

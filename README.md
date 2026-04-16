@@ -1,13 +1,13 @@
 # OpenDeploy
 
-OpenDeploy is an open-source deployment platform. **Phase 2** implements a **real build pipeline** (repo checkout + BuildKit image build + artifact metadata + audit trail). **Phase 3** adds **runtime releases**, **health-gated routing**, **PR previews**, **production activation**, **rollback**, and a **Caddy** edge. **Phase 4** adds **production custom domains** with **DNS verification**, **queue-driven issuance**, and **DB-gated** edge configuration (still no raw tenant Caddyfiles).
+OpenDeploy is an open-source deployment platform. **Phase 2** implements a **real build pipeline** (repo checkout + BuildKit image build + artifact metadata + audit trail). **Phase 3** adds **runtime releases**, **health-gated routing**, **PR previews**, **production activation**, **rollback**, and a **Caddy** edge. **Phase 4** adds **production custom domains** with **DNS verification**, **queue-driven issuance**, and **DB-gated** edge configuration (still no raw tenant Caddyfiles). **Phase 5** focuses on **hardening and operations**: **node pools** and worker posture (**rootless** hints, **runner class**), **OpenTelemetry** + **BullMQ trace carriers**, **workspace quotas**, **reconciliation** jobs, **edge config versioning** (prefer **Caddy admin over Unix socket**), and an **Operations** dashboard for admins.
 
 ## Stack
 
 - **Monorepo**: pnpm workspaces, TypeScript (strict)
 - **Web**: Next.js (App Router), Tailwind, Clerk, minimal shadcn-style UI primitives
 - **API**: NestJS, Prisma, PostgreSQL, Redis, BullMQ
-- **Worker**: Node + BullMQ consumer: BuildKit builds (Phase 2), runtime `docker run` / health checks / teardown (Phase 3), **and** custom-domain jobs + periodic reconcile (Phase 4)
+- **Worker**: Node + BullMQ consumer: BuildKit builds (Phase 2), runtime `docker run` / health checks / teardown (Phase 3), **and** custom-domain jobs + periodic reconcile (Phase 4); Phase 5 **OTel** bootstrap + optional pool / rootless registration env vars
 - **Edge (Phase 3–4)**: Caddy in Docker Compose (`infra/docker/docker-compose.yml`) on `opendeploy_runtime`; custom hostnames are allowlisted from Postgres before appearing in generated config
 - **Local infra**: Docker Compose for Postgres + Redis + optional Caddy (`infra/docker/docker-compose.yml`)
 
@@ -46,9 +46,12 @@ Runtime & routing (Phase 3):
 
 - `PLATFORM_PUBLIC_DOMAIN` (e.g. `deploy.local` — pair with `/etc/hosts` or real DNS for `*.domain`)
 - Worker: Docker CLI for `docker run`; `RUNTIME_DOCKER_NETWORK=opendeploy_runtime` (Compose creates this network)
-- Optional: `CADDY_ADMIN_URL=http://localhost:2019` after `docker compose up` (maps container admin API)
+- Optional: `CADDY_ADMIN_URL=http://localhost:2019` after `docker compose up` (maps container admin API), or **`CADDY_ADMIN_UNIX_SOCKET`** for a permissioned socket in production
+- Optional: `EDGE_NODE_NAME` for **edge config version** scoping; `ENABLE_RECONCILER=false` to disable API cron reconcilers
 - Optional: `CADDY_ACME_EMAIL` for real-certificate issuance on public hostnames (required for meaningful **custom domain** TLS against Let’s Encrypt)
 - Custom domains: point **customer DNS** (CNAME) at the same edge that serves `PLATFORM_PUBLIC_DOMAIN`; worker must run so the `domains` queue and reconcile cron execute
+- **OpenTelemetry**: set `OTEL_EXPORTER_OTLP_ENDPOINT` (and optional `OTEL_SERVICE_NAME`); use `OTEL_SDK_DISABLED=true` to turn off local dev export
+- Worker optional: `WORKER_NODE_POOL`, `WORKER_ROOTLESS_CAPABLE=true`, `WORKER_IDENTITY_FINGERPRINT`
 - Optional: `SECRETS_ENCRYPTION_KEY` (64 hex chars) for `EnvironmentSecret` storage
 - `PREVIEW_TTL_HOURS` (default 168) for orphaned preview GC
 
@@ -104,12 +107,14 @@ pnpm --filter @opendeploy/web build
 - `docs/architecture/phase-2.md`
 - `docs/architecture/phase-3.md`
 - `docs/architecture/phase-4.md`
+- `docs/architecture/phase-5.md`
 - `docs/security/threat-model-phase-1.md`
 - `docs/security/worker-isolation-phase-2.md`
 - `docs/security/runtime-routing-phase-3.md`
 - `docs/security/custom-domains-phase-4.md`
+- `docs/security/hardening-phase-5.md`
 - `docs/adr/` — key architectural decisions
 
-## Phase 5+ (remaining work)
+## Phase 6+ (remaining work)
 
-See **Phase 5 TODO** in `docs/architecture/phase-4.md` (apex/DNS-01, wildcards, DNS providers, BYO certs, stronger renewal/ARI, multi-region edge, progressive delivery, optional Kubernetes backends, autoscaling, persistent volumes).
+See **Phase 6** preview in `docs/architecture/phase-5.md` and domain-specific follow-ups still listed in `docs/architecture/phase-4.md` (apex/DNS-01, wildcards, DNS providers, BYO certs, stronger renewal/ARI, multi-region edge, optional Kubernetes backends, autoscaling beyond hooks, persistent volumes).

@@ -6,6 +6,7 @@ import {
   type ReleaseJobPayload,
   type ReleaseTeardownPayload,
   ReleaseStatus,
+  runWithTraceCarrier,
 } from '@opendeploy/shared';
 import { spawn } from 'node:child_process';
 
@@ -149,6 +150,7 @@ export function registerRuntimeWorkers(redis: IORedis, apiBase: string, secret: 
     RELEASE_QUEUE_NAME,
     async (job) => {
       const data = job.data as ReleaseJobPayload;
+      await runWithTraceCarrier(data.traceCarrier, async () => {
       if (data.kind !== 'provision') return;
       const releaseId = data.releaseId;
 
@@ -305,6 +307,7 @@ export function registerRuntimeWorkers(redis: IORedis, apiBase: string, secret: 
         const t = await completeRes.text();
         throw new Error(`complete_provision_failed:${completeRes.status}:${t}`);
       }
+      });
     },
     { connection: redis, concurrency: 2 },
   );
@@ -317,6 +320,7 @@ export function registerRuntimeWorkers(redis: IORedis, apiBase: string, secret: 
     RELEASE_TEARDOWN_QUEUE_NAME,
     async (job) => {
       const data = job.data as ReleaseTeardownPayload;
+      await runWithTraceCarrier(data.traceCarrier, async () => {
       const planRes = await fetch(`${api}/internal/releases/${data.releaseId}/teardown-plan`, {
         headers: { 'x-internal-secret': secret },
       });
@@ -335,6 +339,7 @@ export function registerRuntimeWorkers(redis: IORedis, apiBase: string, secret: 
       if (!done.ok) {
         throw new Error(`teardown_done_failed:${await done.text()}`);
       }
+      });
     },
     { connection: redis, concurrency: 3 },
   );

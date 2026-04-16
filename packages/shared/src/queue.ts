@@ -11,6 +11,8 @@ export interface DeploymentJobPayload {
   deploymentAttemptId: string;
   workspaceId: string;
   projectId: string;
+  /** W3C trace context for workers (filled by API when OTel is active). */
+  traceCarrier?: Record<string, string>;
 }
 
 export interface DeploymentEventPayload {
@@ -25,9 +27,11 @@ export type ReleaseJobKind = 'provision';
 export interface ReleaseJobPayload {
   releaseId: string;
   kind: ReleaseJobKind;
+  traceCarrier?: Record<string, string>;
 }
 
 export interface ReleaseTeardownPayload {
   releaseId: string;
   reason: 'pr_closed' | 'superseded' | 'ttl' | 'manual';
+  traceCarrier?: Record<string, string>;
 }

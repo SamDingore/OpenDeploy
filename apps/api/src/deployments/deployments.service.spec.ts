@@ -47,6 +47,7 @@ describe('DeploymentsService', () => {
     const events = { emit: vi.fn() };
     const github = { resolveCommitSha: vi.fn().mockResolvedValue({ sha: 'deadbeef' }) };
     const releases = { onBuildSucceeded: vi.fn().mockResolvedValue(undefined) };
+    const capacity = { assertCanEnqueueBuild: vi.fn().mockResolvedValue(undefined) };
 
     const svc = new DeploymentsService(
       prisma as never,
@@ -55,6 +56,7 @@ describe('DeploymentsService', () => {
       events as never,
       github as never,
       releases as never,
+      capacity as never,
     );
 
     await svc.create({

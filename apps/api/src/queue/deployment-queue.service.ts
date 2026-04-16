@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import type { DeploymentJobPayload } from '@opendeploy/shared';
+import { createTraceCarrierFromActiveContext, type DeploymentJobPayload } from '@opendeploy/shared';
 import { DEPLOYMENT_QUEUE } from './queue.module';
 
 @Injectable()
@@ -10,7 +10,8 @@ export class DeploymentQueueService {
   constructor(@Inject(DEPLOYMENT_QUEUE) private readonly queue: Queue) {}
 
   async enqueue(payload: DeploymentJobPayload): Promise<string> {
-    const job = await this.queue.add('process', payload, {
+    const traceCarrier = createTraceCarrierFromActiveContext();
+    const job = await this.queue.add('process', { ...payload, traceCarrier }, {
       attempts: 3,
       backoff: { type: 'exponential', delay: 2000 },
       removeOnComplete: 1000,

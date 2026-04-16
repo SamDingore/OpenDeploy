@@ -17,6 +17,7 @@ export class WorkersController {
     const nodes = await this.prisma.workerNode.findMany({
       orderBy: { lastHeartbeatAt: 'desc' },
       take: 50,
+      include: { nodePool: true },
     });
     return success(nodes);
   }

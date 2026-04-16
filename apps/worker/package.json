@@ -10,6 +10,7 @@
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
+    "@opendeploy/telemetry": "workspace:*",
     "@opendeploy/shared": "workspace:*",
     "bullmq": "^5.34.5",
     "ioredis": "^5.4.2"

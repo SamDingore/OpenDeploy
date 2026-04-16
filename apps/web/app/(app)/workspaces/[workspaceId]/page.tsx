@@ -25,6 +25,9 @@ export default async function WorkspacePage({ params }: { params: Promise<{ work
           <Link className="text-blue-600 hover:underline" href={`/workspaces/${workspaceId}/workers`}>
             Workers
           </Link>
+          <Link className="text-blue-600 hover:underline" href={`/workspaces/${workspaceId}/operations`}>
+            Operations
+          </Link>
         </CardContent>
       </Card>
     </div>

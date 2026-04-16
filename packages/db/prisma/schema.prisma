@@ -62,6 +62,9 @@ enum WorkerStatus {
   offline
   draining
   error
+  degraded
+  quarantined
+  retired
 }
 
 enum WebhookProvider {
@@ -173,6 +176,78 @@ enum CertificateRecordStatus {
   expired
 }
 
+enum NodePoolKind {
+  build
+  runtime
+  edge
+  mixed
+}
+
+enum NodeLeaseScopeType {
+  build
+  runtime
+  edge_op
+}
+
+enum EgressPolicyTier {
+  unrestricted
+  allowlisted
+  blocked
+}
+
+enum IsolationTier {
+  standard
+  hardened
+  internal_trusted
+}
+
+enum RunnerClass {
+  standard
+  hardened
+  internal_trusted
+}
+
+enum ReconciliationKind {
+  runtime
+  route
+  domain
+  node
+  lease
+  artifact
+  edge_config
+}
+
+enum ReconciliationRunStatus {
+  scheduled
+  running
+  completed
+  partially_repaired
+  failed
+}
+
+enum EdgeNodeStatus {
+  active
+  config_applying
+  degraded
+  offline
+  quarantined
+}
+
+enum EdgeConfigApplyStatus {
+  pending
+  applied
+  failed
+  rolled_back
+}
+
+enum CapacityEventType {
+  scale_out_requested
+  scale_in_requested
+  quota_denied
+  queue_depth_high
+  worker_pool_saturated
+}
+
 enum DomainEventType {
   domain_created
   verification_check
@@ -217,6 +292,8 @@ model Workspace {
   webhookEvents        WebhookEvent[]
   auditEvents          AuditEvent[]
   productionBranchRule String? // allowlisted branch for production triggers, Phase 1 optional field
+  quota                WorkspaceQuota?
+  runtimePolicies      RuntimePolicy[]
 }
 
 model WorkspaceMember {
@@ -250,6 +327,7 @@ model Project {
   platformHostnames PlatformHostname[]
   envSecrets        EnvironmentSecret[]
   customDomains     CustomDomain[]
+  runtimePolicy     RuntimePolicy?
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -652,6 +730,24 @@ model SourceSnapshot {
   deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
 }
 
+model NodePool {
+  id                   String       @id @default(cuid())
+  name                 String       @unique
+  kind                 NodePoolKind @default(mixed)
+  isHardened           Boolean      @default(false)
+  supportsRootless     Boolean      @default(false)
+  capacityCpu          Int?
+  capacityMemoryMb     Int?
+  maxConcurrentBuilds  Int          @default(4)
+  maxConcurrentRuntimes Int         @default(20)
+  labelsJson           Json?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  workerNodes    WorkerNode[]
+  capacityEvents CapacityEvent[]
+}
+
 model WorkerNode {
   id         String       @id @default(cuid())
   name       String
@@ -659,14 +755,138 @@ model WorkerNode {
   lastHeartbeatAt DateTime?
   supportsBuildkit Boolean @default(true)
   supportsRegistryPush Boolean @default(false)
+  rootlessCapable Boolean @default(false)
+  runnerClass    RunnerClass @default(standard)
+  /// Opaque fingerprint from worker at register time (e.g. machine id hash); not a secret.
+  workerIdentityFingerprint String?
+  nodePoolId String?
   availableCpu Int?
   availableMemoryMb Int?
   metadata   Json?
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
+  nodePool         NodePool?         @relation(fields: [nodePoolId], references: [id], onDelete: SetNull)
   attempts          DeploymentAttempt[]
   runtimeInstances  RuntimeInstance[]
+  leases            NodeLease[]
+
+  @@index([nodePoolId])
+  @@index([status])
+}
+
+model NodeLease {
+  id           String             @id @default(cuid())
+  workerNodeId String
+  scopeType    NodeLeaseScopeType
+  scopeId      String
+  acquiredAt   DateTime           @default(now())
+  expiresAt    DateTime
+  releasedAt   DateTime?
+
+  workerNode WorkerNode @relation(fields: [workerNodeId], references: [id], onDelete: Cascade)
+
+  @@index([workerNodeId, scopeType, releasedAt])
+  @@index([expiresAt])
+}
+
+model RuntimePolicy {
+  id             String           @id @default(cuid())
+  workspaceId    String?
+  projectId      String?          @unique
+  cpuLimit       Int?
+  memoryLimitMb  Int?
+  maxReplicas    Int              @default(1)
+  egressPolicy   EgressPolicyTier @default(unrestricted)
+  isolationTier  IsolationTier    @default(standard)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model WorkspaceQuota {
+  workspaceId            String @id
+  maxConcurrentBuilds    Int    @default(5)
+  maxConcurrentRuntimes  Int    @default(20)
+  maxCertJobsInFlight    Int    @default(10)
+  maxEdgeReloadsPerHour  Int    @default(120)
+  maxCustomDomains       Int    @default(50)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model CapacityEvent {
+  id         String            @id @default(cuid())
+  nodePoolId String?
+  type       CapacityEventType
+  payloadJson Json?
+  createdAt  DateTime          @default(now())
+
+  nodePool NodePool? @relation(fields: [nodePoolId], references: [id], onDelete: SetNull)
+
+  @@index([nodePoolId, createdAt])
+  @@index([createdAt])
+}
+
+model ReconciliationRun {
+  id             String                  @id @default(cuid())
+  kind           ReconciliationKind
+  startedAt      DateTime                @default(now())
+  finishedAt     DateTime?
+  status         ReconciliationRunStatus @default(running)
+  itemsExamined  Int                     @default(0)
+  itemsRepaired  Int                     @default(0)
+  errorSummary   String?
+  metadataJson   Json?
+
+  @@index([kind, startedAt])
+}
+
+model TelemetrySpanLink {
+  id           String   @id @default(cuid())
+  resourceType String
+  resourceId   String
+  traceId      String
+  spanId       String?
+  recordedAt   DateTime @default(now())
+
+  @@index([resourceType, resourceId])
+  @@index([traceId])
+}
+
+model EdgeNode {
+  id                   String          @id @default(cuid())
+  name                 String          @unique
+  status               EdgeNodeStatus  @default(active)
+  caddyAdminSocketPath String?
+  publicBaseUrl        String?
+  lastHeartbeatAt      DateTime?
+  metadataJson         Json?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  configVersions EdgeConfigVersion[]
+}
+
+model EdgeConfigVersion {
+  id          String                @id @default(cuid())
+  edgeNodeId  String?
+  version     Int
+  configHash  String
+  bodySnapshot String               @db.Text
+  applyStatus EdgeConfigApplyStatus @default(applied)
+  appliedAt   DateTime              @default(now())
+  errorDetail String?
+  actorHint   String?
+
+  edgeNode EdgeNode? @relation(fields: [edgeNodeId], references: [id], onDelete: SetNull)
+
+  @@unique([edgeNodeId, version])
+  @@index([edgeNodeId, appliedAt])
 }
 
 model WebhookEvent {

@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { WorkerStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import { DeploymentStatus } from '@opendeploy/shared';
 import { WorkerStatusDto, WorkerLogDto, WorkerRegisterDto } from '../deployments/dto/worker-status.dto';
@@ -19,12 +29,31 @@ export class InternalController {
 
   @Post('workers/register')
   async register(@Body() body: WorkerRegisterDto) {
+    const poolName = body.nodePoolName ?? 'default';
+    const pool = await this.prisma.nodePool.upsert({
+      where: { name: poolName },
+      create: {
+        name: poolName,
+        kind: 'mixed',
+        supportsRootless: body.poolSupportsRootless ?? body.rootlessCapable ?? false,
+      },
+      update: {
+        ...(body.poolSupportsRootless === true || body.rootlessCapable === true
+          ? { supportsRootless: true }
+          : {}),
+      },
+    });
+
     const node = await this.prisma.workerNode.create({
       data: {
         name: body.name,
         status: 'online',
         lastHeartbeatAt: new Date(),
         metadata: body.metadata as Prisma.InputJsonValue | undefined,
+        nodePoolId: pool.id,
+        rootlessCapable: body.rootlessCapable ?? false,
+        runnerClass: body.runnerClass ?? 'standard',
+        workerIdentityFingerprint: body.workerIdentityFingerprint ?? null,
       },
     });
     return success({ workerId: node.id });
@@ -165,6 +194,10 @@ export class InternalController {
     @Param('attemptId') attemptId: string,
     @Body() body: { workerId: string },
   ) {
+    const wn = await this.prisma.workerNode.findUnique({ where: { id: body.workerId } });
+    if (!wn || wn.status !== WorkerStatus.online) {
+      throw new BadRequestException('worker_not_assignable');
+    }
     await this.prisma.deploymentAttempt.update({
       where: { id: attemptId },
       data: { workerNodeId: body.workerId, startedAt: new Date() },

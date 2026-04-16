@@ -20,6 +20,13 @@ const schema = z.object({
   PLATFORM_PUBLIC_DOMAIN: z.string().min(1).default('deploy.local'),
   /** Optional Caddy admin API (e.g. http://caddy:2019). When unset, edge reload is skipped. */
   CADDY_ADMIN_URL: z.string().url().optional(),
+  /**
+   * Preferred production path: Caddy admin UNIX socket (e.g. /var/run/caddy-admin.sock).
+   * When set, takes precedence over CADDY_ADMIN_URL for POST /load.
+   */
+  CADDY_ADMIN_UNIX_SOCKET: z.string().optional(),
+  /** Optional logical edge node name for config versioning (upserts EdgeNode). */
+  EDGE_NODE_NAME: z.string().optional(),
   /** ACME account email when Caddy obtains public certs (optional for local). */
   CADDY_ACME_EMAIL: z.string().email().optional(),
   /** Optional path to write Caddyfile for volume-based reload. */

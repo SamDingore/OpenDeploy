@@ -29,6 +29,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReleaseQueueService } from '../queue/release-queue.service';
 import { CustomDomainsService } from '../custom-domains/custom-domains.service';
 import { CaddyService } from '../edge/caddy.service';
+import { CapacityService } from '../operations/capacity.service';
 import { openSealed, sealSecret } from '../secrets/secret-crypto';
 
 const DEFAULT_HEALTH = {
@@ -49,7 +50,13 @@ export class ReleasesService {
     private readonly releaseQueue: ReleaseQueueService,
     private readonly caddy: CaddyService,
     private readonly customDomains: CustomDomainsService,
+    private readonly capacity: CapacityService,
   ) {}
+
+  private async enqueueProvisionRelease(workspaceId: string, releaseId: string): Promise<void> {
+    await this.capacity.assertCanProvisionRuntime(workspaceId);
+    await this.releaseQueue.enqueueProvision(releaseId);
+  }
 
   async onBuildSucceeded(deploymentId: string): Promise<void> {
     const dep = await this.prisma.deployment.findUnique({
@@ -103,7 +110,7 @@ export class ReleasesService {
       metadata: { deploymentId, releaseType: rType },
     });
 
-    await this.releaseQueue.enqueueProvision(release.id);
+    await this.enqueueProvisionRelease(dep.workspaceId, release.id);
   }
 
   async requestTeardown(releaseId: string, reason: 'pr_closed' | 'superseded' | 'ttl' | 'manual') {
@@ -650,7 +657,7 @@ export class ReleasesService {
       resourceId: release.id,
       metadata: { deploymentId: dep.id },
     });
-    await this.releaseQueue.enqueueProvision(release.id);
+    await this.enqueueProvisionRelease(input.workspaceId, release.id);
     return release;
   }
 
@@ -703,7 +710,7 @@ export class ReleasesService {
       metadata: { fromReleaseId: currentId, targetArtifactReleaseId: candidate.id },
     });
 
-    await this.releaseQueue.enqueueProvision(release.id);
+    await this.enqueueProvisionRelease(input.workspaceId, release.id);
     return release;
   }
 

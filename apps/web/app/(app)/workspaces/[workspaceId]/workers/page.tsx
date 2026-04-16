@@ -5,7 +5,10 @@ type WorkerNode = {
   id: string;
   name: string;
   status: string;
-  lastSeenAt: string | null;
+  lastHeartbeatAt: string | null;
+  rootlessCapable?: boolean;
+  runnerClass?: string;
+  nodePool?: { name: string; supportsRootless: boolean } | null;
 };
 
 export default async function WorkersPage({
@@ -27,7 +30,13 @@ export default async function WorkersPage({
             </CardHeader>
             <CardContent className="text-sm text-zinc-600">
               <div>Status: {w.status}</div>
-              <div>Last seen: {w.lastSeenAt ? new Date(w.lastSeenAt).toLocaleString() : '—'}</div>
+              <div>Pool: {w.nodePool?.name ?? '—'}</div>
+              <div>Runner class: {w.runnerClass ?? '—'}</div>
+              <div>Rootless: {w.rootlessCapable ? 'yes' : 'no'}</div>
+              <div>
+                Last seen:{' '}
+                {w.lastHeartbeatAt ? new Date(w.lastHeartbeatAt).toLocaleString() : '—'}
+              </div>
             </CardContent>
           </Card>
         ))}

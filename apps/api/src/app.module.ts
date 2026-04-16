@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
@@ -15,9 +16,11 @@ import { ReleasesModule } from './releases/releases.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { WorkersModule } from './workers/workers.module';
+import { OperationsModule } from './operations/operations.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     EnvModule,
     PrismaModule,
     AuditModule,
@@ -32,6 +35,7 @@ import { WorkersModule } from './workers/workers.module';
     WebhooksModule,
     InternalModule,
     WorkersModule,
+    OperationsModule,
   ],
   providers: [
     {

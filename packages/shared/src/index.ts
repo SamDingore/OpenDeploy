@@ -9,4 +9,5 @@ export * from './domain-state-machine';
 export * from './enums';
 export * from './preview-hostname';
 export * from './queue';
+export * from './trace-carrier';
 export * from './release-state-machine';

@@ -1,3 +1,4 @@
+import './instrumentation';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import {
@@ -7,6 +8,7 @@ import {
   BuildFailureCode,
   DeploymentStatus,
   isRetryableBuildFailure,
+  runWithTraceCarrier,
 } from '@opendeploy/shared';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -32,11 +34,25 @@ function maskSecrets(input: string, secrets: string[]): string {
   return out;
 }
 
-async function register(api: string, secret: string, name: string): Promise<string> {
+async function register(
+  api: string,
+  secret: string,
+  name: string,
+  opts: {
+    nodePoolName?: string;
+    rootlessCapable?: boolean;
+    workerIdentityFingerprint?: string;
+  },
+): Promise<string> {
   const res = await fetch(`${api}/internal/workers/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-internal-secret': secret },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({
+      name,
+      nodePoolName: opts.nodePoolName,
+      rootlessCapable: opts.rootlessCapable,
+      workerIdentityFingerprint: opts.workerIdentityFingerprint,
+    }),
   });
   const j = (await res.json()) as { ok?: boolean; data?: { workerId: string } };
   if (!j.ok || !j.data?.workerId) {
@@ -409,13 +425,17 @@ async function main(): Promise<void> {
 
   const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
   const name = `worker-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
-  const workerId = await register(api, secret, name);
+  const workerId = await register(api, secret, name, {
+    nodePoolName: process.env['WORKER_NODE_POOL'],
+    rootlessCapable: process.env['WORKER_ROOTLESS_CAPABLE'] === 'true',
+    workerIdentityFingerprint: process.env['WORKER_IDENTITY_FINGERPRINT'],
+  });
 
   const w = new Worker(
     DEPLOYMENT_QUEUE_NAME,
     async (job) => {
       const data = job.data as DeploymentJobPayload;
-      await processJob(api, secret, workerId, data);
+      await runWithTraceCarrier(data.traceCarrier, async () => processJob(api, secret, workerId, data));
     },
     { connection: redis, concurrency: 2 },
   );

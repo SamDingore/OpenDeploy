@@ -1,5 +1,6 @@
 import { BuildFailureCode, DeploymentStatus } from '@opendeploy/shared';
-import { IsEnum, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { RunnerClass } from '@prisma/client';
+import { IsBoolean, IsEnum, IsOptional, IsString, ValidateIf } from 'class-validator';
 
 export class WorkerStatusDto {
   @IsEnum(DeploymentStatus)
@@ -36,5 +37,26 @@ export class WorkerRegisterDto {
 
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  nodePoolName?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  rootlessCapable?: boolean;
+
+  @IsOptional()
+  @IsEnum(RunnerClass)
+  runnerClass?: RunnerClass;
+
+  @IsOptional()
+  @IsString()
+  workerIdentityFingerprint?: string;
+
+  /** When creating a new pool, record rootless capability at the pool level. */
+  @IsOptional()
+  @IsBoolean()
+  poolSupportsRootless?: boolean;
 }
 

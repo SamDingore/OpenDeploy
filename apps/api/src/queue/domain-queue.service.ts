@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import type { DomainJobPayload } from '@opendeploy/shared';
+import { createTraceCarrierFromActiveContext, type DomainJobPayload } from '@opendeploy/shared';
 import { DOMAIN_QUEUE } from './queue.module';
 
 @Injectable()
@@ -10,7 +10,8 @@ export class DomainQueueService {
   constructor(@Inject(DOMAIN_QUEUE) private readonly queue: Queue) {}
 
   private async enqueue(jobName: DomainJobPayload['kind'], payload: DomainJobPayload) {
-    const job = await this.queue.add(jobName, payload, {
+    const traceCarrier = createTraceCarrierFromActiveContext();
+    const job = await this.queue.add(jobName, { ...payload, traceCarrier }, {
       attempts: 8,
       backoff: { type: 'exponential', delay: 5000 },
       removeOnComplete: 1000,

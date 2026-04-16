@@ -12,6 +12,7 @@ import { DeploymentQueueService } from '../queue/deployment-queue.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReleasesService } from '../releases/releases.service';
 import { DeploymentEventsService } from './deployment-events.service';
+import { CapacityService } from '../operations/capacity.service';
 
 @Injectable()
 export class DeploymentsService {
@@ -24,6 +25,7 @@ export class DeploymentsService {
     private readonly events: DeploymentEventsService,
     private readonly github: GithubService,
     private readonly releases: ReleasesService,
+    private readonly capacity: CapacityService,
   ) {}
 
   async create(input: {
@@ -44,6 +46,8 @@ export class DeploymentsService {
     if (!env) {
       throw new NotFoundException('environment_not_found');
     }
+
+    await this.capacity.assertCanEnqueueBuild(input.workspaceId);
 
     const repoLink = await this.prisma.repositoryLink.findUnique({
       where: { projectId: input.projectId },
@@ -134,6 +138,8 @@ export class DeploymentsService {
       return { duplicate: true as const, deploymentId: existing.id };
     }
 
+    await this.capacity.assertCanEnqueueBuild(input.workspaceId);
+
     const deployment = await this.prisma.deployment.create({
       data: {
         workspaceId: input.workspaceId,
@@ -217,6 +223,8 @@ export class DeploymentsService {
         buildDurationMs: null,
       },
     });
+
+    await this.capacity.assertCanEnqueueBuild(dep.workspaceId);
 
     const queueJobId = await this.queue.enqueue({
       deploymentId: dep.id,
