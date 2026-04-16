@@ -108,13 +108,27 @@ pnpm --filter @opendeploy/web build
 - `docs/architecture/phase-3.md`
 - `docs/architecture/phase-4.md`
 - `docs/architecture/phase-5.md`
+- `docs/architecture/phase-6.md`
+- `docs/architecture/phase-7.md`
 - `docs/security/threat-model-phase-1.md`
 - `docs/security/worker-isolation-phase-2.md`
 - `docs/security/runtime-routing-phase-3.md`
 - `docs/security/custom-domains-phase-4.md`
 - `docs/security/hardening-phase-5.md`
+- `docs/security/distributed-control-plane-phase-6.md`
+- `docs/security/global-traffic-governance-phase-7.md`
 - `docs/adr/` — key architectural decisions
 
 ## Phase 6+ (remaining work)
 
-See **Phase 6** preview in `docs/architecture/phase-5.md` and domain-specific follow-ups still listed in `docs/architecture/phase-4.md` (apex/DNS-01, wildcards, DNS providers, BYO certs, stronger renewal/ARI, multi-region edge, optional Kubernetes backends, autoscaling beyond hooks, persistent volumes).
+See `docs/architecture/phase-6.md` (distribution, backend portability, progressive delivery, identity/policy). Domain-specific follow-ups remain tracked in `docs/architecture/phase-4.md` (apex/DNS-01, wildcards, DNS providers, BYO certs, stronger renewal/ARI).
+
+## Operator notes (Phase 7 direction)
+
+Phase 7 (see `docs/architecture/phase-7.md`) makes global operations safer by introducing a few operator-facing primitives:
+
+- **Change sets**: sensitive routing/policy/DR changes should be represented as versioned `ChangeSet`s, validated before apply and rollbackable on failure.
+- **Approvals**: `ApprovalPolicy` can require approval for high-impact operations (global traffic changes, region/fleet drain, cross-region failover, regulated backend switches).
+- **Exceptions + expiry**: `PolicyException` is explicit, scoped, and time-bounded (`expiresAt` enforced).
+- **Break-glass**: emergency override is supported but separately audited, scoped, and temporary; it should not allow raw edge edits as the source of truth.
+- **Failover/drain workflows**: region/fleet drain, evacuation, and restoration are first-class workflows with health + identity safety checks and OpenTelemetry/audit coverage.
