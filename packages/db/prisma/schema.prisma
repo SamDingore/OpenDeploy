@@ -1,0 +1,326 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum DeploymentStatus {
+  created
+  queued
+  assigned
+  fetching_source
+  preparing_context
+  building_image
+  pushing_image
+  build_succeeded
+  build_failed
+  cancelled
+}
+
+enum BuildFailureCode {
+  github_webhook_invalid
+  github_api_transient
+  github_api_forbidden
+  repo_fetch_failed
+  repo_not_found
+  dockerfile_invalid
+  build_failed
+  registry_push_failed
+  timeout
+  worker_internal_error
+}
+
+enum TriggerSource {
+  manual
+  push
+  pull_request
+}
+
+enum DeploymentAttemptResult {
+  succeeded
+  failed
+  cancelled
+}
+
+enum EnvironmentType {
+  preview
+  production
+}
+
+enum WorkerStatus {
+  online
+  offline
+  draining
+  error
+}
+
+enum WebhookProvider {
+  github
+  clerk
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships WorkspaceMember[]
+  auditEvents AuditEvent[]      @relation("AuditActor")
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members              WorkspaceMember[]
+  projects             Project[]
+  installations        GitProviderInstallation[]
+  deployments          Deployment[]
+  webhookEvents        WebhookEvent[]
+  auditEvents          AuditEvent[]
+  productionBranchRule String? // allowlisted branch for production triggers, Phase 1 optional field
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  repositoryLinks  RepositoryLink[]
+  environments     Environment[]
+  deployments      Deployment[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model GitProviderInstallation {
+  id                     String   @id @default(cuid())
+  workspaceId            String
+  providerInstallationId String   @unique
+  accountLogin           String?
+  rawMetadata            Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  links     RepositoryLink[]
+}
+
+model RepositoryLink {
+  id             String   @id @default(cuid())
+  projectId      String
+  installationId String
+  providerRepoId String
+  fullName       String
+  defaultBranch  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project      Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  installation GitProviderInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId])
+  @@index([installationId])
+}
+
+model Environment {
+  id          String          @id @default(cuid())
+  projectId   String
+  type        EnvironmentType
+  name        String
+  slug        String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployments  Deployment[]
+
+  @@unique([projectId, slug])
+  @@index([projectId])
+}
+
+model Deployment {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  projectId     String
+  environmentId String
+  status        DeploymentStatus  @default(created)
+  commitSha       String?
+  branch          String?
+  triggerSource   TriggerSource @default(manual)
+  buildStartedAt  DateTime?
+  buildFinishedAt DateTime?
+  buildDurationMs Int?
+  failureCode     BuildFailureCode?
+  failureDetail   String?
+  gitRef          String? // optional ref hint (branch/tag) for manual triggers
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  attempts       DeploymentAttempt[]
+  logs           DeploymentLogChunk[]
+  artifacts      BuildArtifact[]
+  sourceSnapshot SourceSnapshot?
+
+  @@index([workspaceId, projectId, environmentId])
+  @@index([projectId, status])
+  @@index([createdAt])
+}
+
+model DeploymentAttempt {
+  id           String   @id @default(cuid())
+  deploymentId String
+  attemptNumber Int
+  queueJobId   String?
+  workerNodeId String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  result       DeploymentAttemptResult?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  deployment Deployment  @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  workerNode WorkerNode? @relation(fields: [workerNodeId], references: [id])
+
+  @@unique([deploymentId, attemptNumber])
+  @@index([deploymentId])
+}
+
+model DeploymentLogChunk {
+  id           String   @id @default(cuid())
+  deploymentId String
+  seq          Int
+  level        String
+  message      String
+  meta         Json?
+  createdAt    DateTime @default(now())
+
+  deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  @@unique([deploymentId, seq])
+  @@index([deploymentId, seq])
+}
+
+model BuildArtifact {
+  id                 String   @id @default(cuid())
+  deploymentId       String
+  imageTag           String
+  imageDigest        String?
+  registryType       String?
+  registryRepository String?
+  buildContextBytes  Int?
+  dockerfilePath     String?
+  builderVersion     String?
+  metadataJson       Json?
+  createdAt          DateTime @default(now())
+
+  deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  @@index([deploymentId, createdAt])
+}
+
+model SourceSnapshot {
+  id             String   @id @default(cuid())
+  deploymentId   String   @unique
+  repoOwner      String?
+  repoName       String?
+  installationId String?
+  commitSha      String
+  cloneUrlMasked String?
+  defaultBranch  String?
+  createdAt      DateTime @default(now())
+
+  deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+}
+
+model WorkerNode {
+  id         String       @id @default(cuid())
+  name       String
+  status     WorkerStatus @default(offline)
+  lastHeartbeatAt DateTime?
+  supportsBuildkit Boolean @default(true)
+  supportsRegistryPush Boolean @default(false)
+  availableCpu Int?
+  availableMemoryMb Int?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  attempts DeploymentAttempt[]
+}
+
+model WebhookEvent {
+  id             String          @id @default(cuid())
+  workspaceId    String?
+  provider       WebhookProvider
+  deliveryId     String
+  eventType      String
+  idempotencyKey String          @unique
+  payload        Json
+  processed      Boolean         @default(false)
+  processedAt    DateTime?
+  error          String?
+  createdAt      DateTime        @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, deliveryId])
+  @@index([provider, processed])
+  @@index([workspaceId])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  actorUserId String?
+  action      String
+  resource    String
+  resourceId  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  actor     User?      @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([actorUserId])
+}

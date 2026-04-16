@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: opendeploy
+      POSTGRES_PASSWORD: opendeploy
+      POSTGRES_DB: opendeploy
+    ports:
+      - '5432:5432'
+    volumes:
+      - opendeploy_pg:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+volumes:
+  opendeploy_pg:
