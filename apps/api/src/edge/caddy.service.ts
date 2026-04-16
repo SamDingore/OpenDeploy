@@ -1,9 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CustomDomainStatus } from '@prisma/client';
 import { buildCaddyfile } from '@opendeploy/shared';
 import { writeFile } from 'node:fs/promises';
 import type { Env } from '../config/env';
 import { OPENDEPLOY_ENV } from '../config/env.constants';
 import { PrismaService } from '../prisma/prisma.service';
+
+/** Custom hostnames appear in the edge config only in these states (verified + issuance/routing). */
+const CUSTOM_DOMAIN_CADDY_STATUSES: CustomDomainStatus[] = [
+  CustomDomainStatus.certificate_issuing,
+  CustomDomainStatus.certificate_active,
+  CustomDomainStatus.certificate_renewing,
+  CustomDomainStatus.active,
+];
 
 @Injectable()
 export class CaddyService {
@@ -15,17 +24,39 @@ export class CaddyService {
   ) {}
 
   async applyFromDatabase(): Promise<void> {
-    const bindings = await this.prisma.routeBinding.findMany({
-      where: { status: 'attached' },
+    const platformBindings = await this.prisma.routeBinding.findMany({
+      where: { status: 'attached', platformHostnameId: { not: null } },
       include: {
         platformHostname: true,
         runtimeInstance: true,
       },
     });
-    const routes = bindings.map((b) => ({
-      host: b.platformHostname.hostname,
-      upstreamDial: b.runtimeInstance.upstreamDial,
-    }));
+
+    const customBindings = await this.prisma.routeBinding.findMany({
+      where: {
+        status: 'attached',
+        platformHostnameId: null,
+        customDomain: {
+          status: { in: CUSTOM_DOMAIN_CADDY_STATUSES },
+        },
+      },
+      include: {
+        runtimeInstance: true,
+        customDomain: { select: { hostname: true } },
+      },
+    });
+
+    const routes = [
+      ...platformBindings.map((b) => ({
+        host: b.platformHostname!.hostname,
+        upstreamDial: b.runtimeInstance.upstreamDial,
+      })),
+      ...customBindings.map((b) => ({
+        host: b.customDomain!.hostname,
+        upstreamDial: b.runtimeInstance.upstreamDial,
+      })),
+    ];
+
     const body = buildCaddyfile({
       routes,
       email: this.env.CADDY_ACME_EMAIL,
@@ -50,7 +81,8 @@ export class CaddyService {
     });
     if (!res.ok) {
       const t = await res.text();
-      throw new Error(`caddy_reload_failed:${res.status}:${t}`);
+      const redacted = t.replace(/(Authorization|Bearer|token|key)([^"]*)("[\w-]+")/gi, '$1=***');
+      throw new Error(`caddy_reload_failed:${res.status}:${redacted.slice(0, 2000)}`);
     }
     this.logger.log({ routeCount: routes.length }, 'caddy_reload_ok');
   }

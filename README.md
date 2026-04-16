@@ -1,14 +1,14 @@
 # OpenDeploy
 
-OpenDeploy is an open-source deployment platform. **Phase 2** implements a **real build pipeline** (repo checkout + BuildKit image build + artifact metadata + audit trail). **Phase 3** adds **runtime releases**, **health-gated routing**, **PR previews**, **production activation**, **rollback**, and a **Caddy** edge — still on **platform-managed subdomains only** (no custom domains yet).
+OpenDeploy is an open-source deployment platform. **Phase 2** implements a **real build pipeline** (repo checkout + BuildKit image build + artifact metadata + audit trail). **Phase 3** adds **runtime releases**, **health-gated routing**, **PR previews**, **production activation**, **rollback**, and a **Caddy** edge. **Phase 4** adds **production custom domains** with **DNS verification**, **queue-driven issuance**, and **DB-gated** edge configuration (still no raw tenant Caddyfiles).
 
 ## Stack
 
 - **Monorepo**: pnpm workspaces, TypeScript (strict)
 - **Web**: Next.js (App Router), Tailwind, Clerk, minimal shadcn-style UI primitives
 - **API**: NestJS, Prisma, PostgreSQL, Redis, BullMQ
-- **Worker**: Node + BullMQ consumer: BuildKit builds (Phase 2) **and** runtime `docker run` / health checks / teardown (Phase 3)
-- **Edge (Phase 3)**: Caddy in Docker Compose (`infra/docker/docker-compose.yml`) on `opendeploy_runtime`
+- **Worker**: Node + BullMQ consumer: BuildKit builds (Phase 2), runtime `docker run` / health checks / teardown (Phase 3), **and** custom-domain jobs + periodic reconcile (Phase 4)
+- **Edge (Phase 3–4)**: Caddy in Docker Compose (`infra/docker/docker-compose.yml`) on `opendeploy_runtime`; custom hostnames are allowlisted from Postgres before appearing in generated config
 - **Local infra**: Docker Compose for Postgres + Redis + optional Caddy (`infra/docker/docker-compose.yml`)
 
 ## Quick start
@@ -47,7 +47,8 @@ Runtime & routing (Phase 3):
 - `PLATFORM_PUBLIC_DOMAIN` (e.g. `deploy.local` — pair with `/etc/hosts` or real DNS for `*.domain`)
 - Worker: Docker CLI for `docker run`; `RUNTIME_DOCKER_NETWORK=opendeploy_runtime` (Compose creates this network)
 - Optional: `CADDY_ADMIN_URL=http://localhost:2019` after `docker compose up` (maps container admin API)
-- Optional: `CADDY_ACME_EMAIL` for real-certificate issuance on public hostnames
+- Optional: `CADDY_ACME_EMAIL` for real-certificate issuance on public hostnames (required for meaningful **custom domain** TLS against Let’s Encrypt)
+- Custom domains: point **customer DNS** (CNAME) at the same edge that serves `PLATFORM_PUBLIC_DOMAIN`; worker must run so the `domains` queue and reconcile cron execute
 - Optional: `SECRETS_ENCRYPTION_KEY` (64 hex chars) for `EnvironmentSecret` storage
 - `PREVIEW_TTL_HOURS` (default 168) for orphaned preview GC
 
@@ -60,6 +61,7 @@ Web (`apps/web/.env.local`):
 ```bash
 pnpm install
 pnpm db:push
+# or: pnpm --filter @opendeploy/db exec prisma migrate deploy
 ```
 
 ### 4) Run services (three terminals)
@@ -101,11 +103,13 @@ pnpm --filter @opendeploy/web build
 - `docs/architecture/phase-1.md`
 - `docs/architecture/phase-2.md`
 - `docs/architecture/phase-3.md`
+- `docs/architecture/phase-4.md`
 - `docs/security/threat-model-phase-1.md`
 - `docs/security/worker-isolation-phase-2.md`
 - `docs/security/runtime-routing-phase-3.md`
+- `docs/security/custom-domains-phase-4.md`
 - `docs/adr/` — key architectural decisions
 
-## Phase 4+ (remaining work)
+## Phase 5+ (remaining work)
 
-See **Phase 4** list in `docs/architecture/phase-3.md` (custom domains with safe ACME strategy, stronger isolation, multi-region edge, progressive delivery, optional Kubernetes backends, autoscaling, persistent volumes for stateful apps).
+See **Phase 5 TODO** in `docs/architecture/phase-4.md` (apex/DNS-01, wildcards, DNS providers, BYO certs, stronger renewal/ARI, multi-region edge, progressive delivery, optional Kubernetes backends, autoscaling, persistent volumes).

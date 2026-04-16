@@ -120,6 +120,76 @@ enum HealthCheckType {
   tcp
 }
 
+enum CustomDomainStatus {
+  pending
+  awaiting_verification
+  verified
+  certificate_issuing
+  certificate_active
+  certificate_renewing
+  active
+  failed
+  revoked
+  detached
+  deleted
+}
+
+enum DomainVerificationMethod {
+  cname_and_txt
+}
+
+enum DomainFailureCode {
+  invalid_hostname
+  verification_not_found
+  cname_misconfigured
+  txt_misconfigured
+  rate_limited
+  acme_order_failed
+  edge_attach_failed
+  renewal_failed
+}
+
+enum DomainCheckMethod {
+  dns_txt
+  http_token
+  cname_target
+}
+
+enum CertChallengeType {
+  http_01
+  dns_01
+}
+
+enum CertificateProvider {
+  letsencrypt
+}
+
+enum CertificateRecordStatus {
+  pending
+  issuing
+  active
+  renewal_pending
+  failed
+  expired
+}
+
+enum DomainEventType {
+  domain_created
+  verification_check
+  verification_passed
+  verification_failed
+  certificate_order_started
+  certificate_active
+  certificate_renewal
+  certificate_failure
+  attach_requested
+  attach_succeeded
+  attach_failed
+  detach
+  reconcile
+  status_transition
+}
+
 model User {
   id        String   @id @default(cuid())
   clerkId   String   @unique
@@ -127,8 +197,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships WorkspaceMember[]
-  auditEvents AuditEvent[]      @relation("AuditActor")
+  memberships   WorkspaceMember[]
+  auditEvents   AuditEvent[]      @relation("AuditActor")
+  customDomains CustomDomain[]
 }
 
 model Workspace {
@@ -178,6 +249,7 @@ model Project {
   releases          Release[]
   platformHostnames PlatformHostname[]
   envSecrets        EnvironmentSecret[]
+  customDomains     CustomDomain[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -233,6 +305,7 @@ model Environment {
   activeReleaseId     String?              @unique
   activeRelease       Release?             @relation("EnvironmentActiveRelease", fields: [activeReleaseId], references: [id], onDelete: SetNull)
   envSecrets          EnvironmentSecret[]
+  customDomains       CustomDomain[]
 
   @@unique([projectId, slug])
   @@index([projectId])
@@ -413,7 +486,8 @@ model PlatformHostname {
 
 model RouteBinding {
   id                 String             @id @default(cuid())
-  platformHostnameId String
+  /// Null when this binding serves a verified custom domain only (Phase 4).
+  platformHostnameId String?
   runtimeInstanceId  String
   status             RouteBindingStatus @default(pending)
   attachedAt         DateTime?
@@ -421,11 +495,101 @@ model RouteBinding {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  platformHostname PlatformHostname @relation(fields: [platformHostnameId], references: [id], onDelete: Cascade)
-  runtimeInstance  RuntimeInstance  @relation(fields: [runtimeInstanceId], references: [id], onDelete: Cascade)
+  platformHostname PlatformHostname? @relation(fields: [platformHostnameId], references: [id], onDelete: Cascade)
+  runtimeInstance  RuntimeInstance   @relation(fields: [runtimeInstanceId], references: [id], onDelete: Cascade)
+  customDomain     CustomDomain?
 
   @@index([platformHostnameId, status])
   @@index([runtimeInstanceId])
+}
+
+model CustomDomain {
+  id                    String                 @id @default(cuid())
+  projectId             String
+  environmentId       String
+  hostname              String                 @unique
+  apexDomain            String
+  status                CustomDomainStatus     @default(pending)
+  verificationMethod    DomainVerificationMethod @default(cname_and_txt)
+  verificationToken     String
+  verifiedAt            DateTime?
+  lastCheckedAt         DateTime?
+  activeCertificateId   String?                @unique
+  routeBindingId        String?                @unique
+  createdByUserId       String?
+  failureCode           DomainFailureCode?
+  failureDetail         String?
+  lastIssuanceAttemptAt DateTime?
+  nextRetryAt           DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  createdBy   User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  activeCertificate CertificateRecord? @relation("CustomDomainActiveCert", fields: [activeCertificateId], references: [id], onDelete: SetNull)
+  routeBinding      RouteBinding?      @relation(fields: [routeBindingId], references: [id], onDelete: SetNull)
+
+  verificationChecks DomainVerificationCheck[]
+  certificateHistory CertificateRecord[]       @relation("CustomDomainCerts")
+  events             DomainEvent[]
+
+  @@index([projectId, environmentId])
+  @@index([status])
+  @@index([nextRetryAt])
+}
+
+model DomainVerificationCheck {
+  id             String           @id @default(cuid())
+  customDomainId String
+  method         DomainCheckMethod
+  result         Boolean
+  observedValue  String?
+  checkedAt      DateTime         @default(now())
+  errorDetail    String?
+
+  customDomain CustomDomain @relation(fields: [customDomainId], references: [id], onDelete: Cascade)
+
+  @@index([customDomainId, checkedAt])
+}
+
+model CertificateRecord {
+  id                 String                  @id @default(cuid())
+  customDomainId     String
+  provider           CertificateProvider     @default(letsencrypt)
+  status             CertificateRecordStatus @default(pending)
+  challengeType      CertChallengeType       @default(http_01)
+  externalOrderRef   String?
+  notBefore          DateTime?
+  notAfter           DateTime?
+  renewalAttemptedAt DateTime?
+  renewalSucceededAt DateTime?
+  failureCode        DomainFailureCode?
+  failureDetail      String?
+  serialNumberMasked String?
+  metadataJson       Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customDomain       CustomDomain @relation("CustomDomainCerts", fields: [customDomainId], references: [id], onDelete: Cascade)
+  activeForDomain    CustomDomain? @relation("CustomDomainActiveCert")
+
+  @@index([customDomainId, createdAt])
+  @@index([notAfter])
+}
+
+model DomainEvent {
+  id             String          @id @default(cuid())
+  customDomainId String
+  type           DomainEventType
+  payloadJson    Json?
+  createdAt      DateTime        @default(now())
+
+  customDomain CustomDomain @relation(fields: [customDomainId], references: [id], onDelete: Cascade)
+
+  @@index([customDomainId, createdAt])
 }
 
 model HealthCheckResult {

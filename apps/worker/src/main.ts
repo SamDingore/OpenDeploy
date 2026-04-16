@@ -1,7 +1,8 @@
-import { Worker } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import {
   DEPLOYMENT_QUEUE_NAME,
+  DOMAIN_QUEUE_NAME,
   type DeploymentJobPayload,
   BuildFailureCode,
   DeploymentStatus,
@@ -11,6 +12,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { registerDomainWorkers } from './domain-worker';
 import { registerRuntimeWorkers } from './runtime-worker';
 
 function requireEnv(name: string): string {
@@ -423,6 +425,17 @@ async function main(): Promise<void> {
   });
 
   registerRuntimeWorkers(redis, api, secret, workerId);
+  registerDomainWorkers(redis, api, secret);
+
+  const domainQueue = new Queue(DOMAIN_QUEUE_NAME, { connection: redis });
+  await domainQueue.add(
+    'domain-reconcile',
+    { kind: 'domain-reconcile' as const, sweep: true },
+    {
+      repeat: { every: 15 * 60 * 1000 },
+      jobId: 'domain-reconcile-cron',
+    },
+  );
 
   console.info('worker_online', { workerId, queue: DEPLOYMENT_QUEUE_NAME });
 }

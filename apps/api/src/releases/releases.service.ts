@@ -27,7 +27,8 @@ import { OPENDEPLOY_ENV } from '../config/env.constants';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReleaseQueueService } from '../queue/release-queue.service';
-import { CaddyService } from './caddy.service';
+import { CustomDomainsService } from '../custom-domains/custom-domains.service';
+import { CaddyService } from '../edge/caddy.service';
 import { openSealed, sealSecret } from '../secrets/secret-crypto';
 
 const DEFAULT_HEALTH = {
@@ -47,6 +48,7 @@ export class ReleasesService {
     private readonly audit: AuditService,
     private readonly releaseQueue: ReleaseQueueService,
     private readonly caddy: CaddyService,
+    private readonly customDomains: CustomDomainsService,
   ) {}
 
   async onBuildSucceeded(deploymentId: string): Promise<void> {
@@ -134,6 +136,8 @@ export class ReleasesService {
     });
     if (!release) return;
 
+    let detachedCustomDomains: { id: string; workspaceId: string }[] = [];
+
     await this.prisma.$transaction(async (tx) => {
       const instances = await tx.runtimeInstance.findMany({
         where: { releaseId },
@@ -141,6 +145,10 @@ export class ReleasesService {
       });
       const ids = instances.map((i) => i.id);
       if (ids.length) {
+        detachedCustomDomains = await this.customDomains.detachCustomDomainsForRuntimeInstancesInTx(
+          tx,
+          ids,
+        );
         await tx.routeBinding.updateMany({
           where: {
             runtimeInstanceId: { in: ids },
@@ -179,6 +187,8 @@ export class ReleasesService {
       resource: 'release',
       resourceId: releaseId,
     });
+
+    await this.customDomains.recordRuntimeDetachEvents(detachedCustomDomains);
 
     try {
       await this.caddy.applyFromDatabase();

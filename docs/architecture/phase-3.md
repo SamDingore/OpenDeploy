@@ -2,7 +2,7 @@
 
 Phase 2 proved OpenDeploy can **build** a container image from a GitHub-linked repo with a full audit trail. Phase 3 takes the next bounded step: **run** that image as an isolated runtime, **verify health**, attach **platform-owned** traffic via **Caddy**, and support **preview** (PR) and **production** releases with **rollback**.
 
-Custom domains, customer-managed TLS, and DNS automation are **explicitly out of scope** (certificate issuance rate limits and ownership verification are a different risk class).
+**Phase 4** covers **custom domains** and **tenant TLS automation** (see `docs/architecture/phase-4.md`). Phase 3 docs remain accurate for platform-owned routing only.
 
 ## Objective
 

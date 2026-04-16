@@ -4,6 +4,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { EnvModule } from './config/env.module';
+import { CustomDomainsModule } from './custom-domains/custom-domains.module';
 import { DeploymentsModule } from './deployments/deployments.module';
 import { GithubModule } from './github/github.module';
 import { InternalModule } from './internal/internal.module';
@@ -26,6 +27,7 @@ import { WorkersModule } from './workers/workers.module';
     ProjectsModule,
     GithubModule,
     DeploymentsModule,
+    CustomDomainsModule,
     ReleasesModule,
     WebhooksModule,
     InternalModule,

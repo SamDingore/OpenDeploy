@@ -49,6 +49,18 @@ export default async function ProjectPage({
             {project.environments.map((e) => (
               <li key={e.id}>
                 {e.name} ({e.slug}) — {e.type}
+                {e.type === 'production' ? (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <Link
+                      href={`/workspaces/${workspaceId}/projects/${projectId}/environments/${e.id}/custom-domains`}
+                      className="text-blue-600"
+                    >
+                      Custom domains
+                    </Link>
+                  </>
+                ) : null}
               </li>
             ))}
           </ul>
