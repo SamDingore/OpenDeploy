@@ -30,6 +30,14 @@ export default async function ProjectPage({
       <div>
         <h1 className="text-2xl font-semibold">{project.name}</h1>
         <p className="text-sm text-zinc-600">{project.slug}</p>
+        <p className="mt-2 text-sm">
+          <Link
+            href={`/workspaces/${workspaceId}/projects/${projectId}/releases`}
+            className="text-blue-600"
+          >
+            View releases →
+          </Link>
+        </p>
       </div>
 
       <Card>

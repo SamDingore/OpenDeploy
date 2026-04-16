@@ -69,6 +69,57 @@ enum WebhookProvider {
   clerk
 }
 
+enum ReleaseType {
+  preview
+  production
+}
+
+enum ReleaseStatus {
+  pending
+  provisioning_runtime
+  starting
+  health_checking
+  active
+  failed
+  stopped
+  rolled_back
+  terminated
+}
+
+enum RuntimeInstanceStatus {
+  created
+  starting
+  running
+  unhealthy
+  stopping
+  stopped
+  failed
+}
+
+enum RouteBindingStatus {
+  pending
+  attached
+  detaching
+  detached
+  failed
+}
+
+enum PlatformHostnameKind {
+  preview
+  production
+}
+
+enum PlatformHostnameStatus {
+  pending
+  active
+  retired
+}
+
+enum HealthCheckType {
+  http
+  tcp
+}
+
 model User {
   id        String   @id @default(cuid())
   clerkId   String   @unique
@@ -91,6 +142,7 @@ model Workspace {
   projects             Project[]
   installations        GitProviderInstallation[]
   deployments          Deployment[]
+  releases             Release[]
   webhookEvents        WebhookEvent[]
   auditEvents          AuditEvent[]
   productionBranchRule String? // allowlisted branch for production triggers, Phase 1 optional field
@@ -119,10 +171,13 @@ model Project {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  repositoryLinks  RepositoryLink[]
-  environments     Environment[]
-  deployments      Deployment[]
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  repositoryLinks   RepositoryLink[]
+  environments      Environment[]
+  deployments       Deployment[]
+  releases          Release[]
+  platformHostnames PlatformHostname[]
+  envSecrets        EnvironmentSecret[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId])
@@ -164,11 +219,20 @@ model Environment {
   type        EnvironmentType
   name        String
   slug        String
+  /// Container port your app listens on inside the image (Phase 3 runtime).
+  runtimeContainerPort Int            @default(3000)
+  /// JSON: { type: "http"|"tcp", path?: string, port?: number, startupTimeoutMs: number, steadyIntervalMs?: number }
+  runtimeHealthCheck   Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  deployments  Deployment[]
+  project             Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployments         Deployment[]
+  releases            Release[]
+  platformHostnames   PlatformHostname[]
+  activeReleaseId     String?              @unique
+  activeRelease       Release?             @relation("EnvironmentActiveRelease", fields: [activeReleaseId], references: [id], onDelete: SetNull)
+  envSecrets          EnvironmentSecret[]
 
   @@unique([projectId, slug])
   @@index([projectId])
@@ -183,6 +247,8 @@ model Deployment {
   commitSha       String?
   branch          String?
   triggerSource   TriggerSource @default(manual)
+  /// GitHub PR number when deployment is preview-from-PR (Phase 3).
+  pullRequestNumber Int?
   buildStartedAt  DateTime?
   buildFinishedAt DateTime?
   buildDurationMs Int?
@@ -200,6 +266,7 @@ model Deployment {
   logs           DeploymentLogChunk[]
   artifacts      BuildArtifact[]
   sourceSnapshot SourceSnapshot?
+  releases       Release[]
 
   @@index([workspaceId, projectId, environmentId])
   @@index([projectId, status])
@@ -254,8 +321,157 @@ model BuildArtifact {
   createdAt          DateTime @default(now())
 
   deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  releases   Release[]
 
   @@index([deploymentId, createdAt])
+}
+
+model Release {
+  id                  String        @id @default(cuid())
+  workspaceId         String
+  projectId           String
+  environmentId       String
+  deploymentId        String
+  buildArtifactId     String
+  releaseType         ReleaseType
+  status              ReleaseStatus @default(pending)
+  pullRequestNumber   Int?
+  commitSha           String
+  activatedAt         DateTime?
+  deactivatedAt       DateTime?
+  rollbackOfReleaseId String?
+  createdByUserId     String?
+  failureDetail       String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment   Environment   @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  deployment    Deployment    @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  buildArtifact BuildArtifact @relation(fields: [buildArtifactId], references: [id], onDelete: Cascade)
+  rollbackOf    Release?      @relation("ReleaseRollback", fields: [rollbackOfReleaseId], references: [id])
+  rollbackChildren Release[]  @relation("ReleaseRollback")
+
+  activeForEnvironment Environment? @relation("EnvironmentActiveRelease")
+
+  runtimeInstances RuntimeInstance[]
+  runtimeLogs      RuntimeLogChunk[]
+
+  @@index([projectId, environmentId, status])
+  @@index([pullRequestNumber, projectId, environmentId])
+  @@index([deploymentId])
+}
+
+model RuntimeInstance {
+  id                String                @id @default(cuid())
+  releaseId         String
+  workerNodeId      String?
+  /// Docker container name we generate (safe DNS label on runtime network).
+  containerName     String                @unique
+  containerIdMasked String?
+  imageTag          String
+  imageDigest       String?
+  status            RuntimeInstanceStatus @default(created)
+  internalPort      Int
+  /// Upstream dial host:port for the edge (usually containerName:internalPort).
+  upstreamDial      String
+  startedAt         DateTime?
+  stoppedAt         DateTime?
+  lastHealthStatus  String?
+  metadataJson      Json?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  release         Release              @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  workerNode      WorkerNode?          @relation(fields: [workerNodeId], references: [id])
+  healthResults   HealthCheckResult[]
+  routeBindings   RouteBinding[]
+
+  @@index([releaseId])
+  @@index([workerNodeId])
+}
+
+model PlatformHostname {
+  id                String                 @id @default(cuid())
+  projectId         String
+  environmentId     String
+  hostname          String                 @unique
+  kind              PlatformHostnameKind
+  pullRequestNumber Int?
+  status            PlatformHostnameStatus @default(active)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  routeBindings RouteBinding[]
+
+  @@index([projectId, environmentId])
+}
+
+model RouteBinding {
+  id                 String             @id @default(cuid())
+  platformHostnameId String
+  runtimeInstanceId  String
+  status             RouteBindingStatus @default(pending)
+  attachedAt         DateTime?
+  detachedAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  platformHostname PlatformHostname @relation(fields: [platformHostnameId], references: [id], onDelete: Cascade)
+  runtimeInstance  RuntimeInstance  @relation(fields: [runtimeInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([platformHostnameId, status])
+  @@index([runtimeInstanceId])
+}
+
+model HealthCheckResult {
+  id                String          @id @default(cuid())
+  runtimeInstanceId String
+  checkType         HealthCheckType
+  success           Boolean
+  latencyMs         Int?
+  detail            String?
+  createdAt         DateTime        @default(now())
+
+  runtimeInstance RuntimeInstance @relation(fields: [runtimeInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([runtimeInstanceId, createdAt])
+}
+
+model RuntimeLogChunk {
+  id        String   @id @default(cuid())
+  releaseId String
+  seq       Int
+  level     String
+  message   String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseId, seq])
+  @@index([releaseId, seq])
+}
+
+model EnvironmentSecret {
+  id            String   @id @default(cuid())
+  projectId     String
+  environmentId String
+  name          String
+  /// AES-256-GCM payload (base64) — ciphertext only; never log plaintext.
+  valueEncrypted String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@unique([environmentId, name])
+  @@index([projectId])
 }
 
 model SourceSnapshot {
@@ -285,7 +501,8 @@ model WorkerNode {
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
-  attempts DeploymentAttempt[]
+  attempts          DeploymentAttempt[]
+  runtimeInstances  RuntimeInstance[]
 }
 
 model WebhookEvent {

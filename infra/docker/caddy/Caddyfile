@@ -1,0 +1,5 @@
+# Base site only. The API replaces config via CADDY_ADMIN_URL POST /load or CADDYFILE_PATH.
+
+:80 {
+	respond "OpenDeploy edge — configure via control plane" 200
+}

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   BuildFailureCode,
   DeploymentStatus,
@@ -10,16 +10,20 @@ import { AuditService } from '../audit/audit.service';
 import { GithubService } from '../github/github.service';
 import { DeploymentQueueService } from '../queue/deployment-queue.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReleasesService } from '../releases/releases.service';
 import { DeploymentEventsService } from './deployment-events.service';
 
 @Injectable()
 export class DeploymentsService {
+  private readonly logger = new Logger(DeploymentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: DeploymentQueueService,
     private readonly audit: AuditService,
     private readonly events: DeploymentEventsService,
     private readonly github: GithubService,
+    private readonly releases: ReleasesService,
   ) {}
 
   async create(input: {
@@ -114,6 +118,7 @@ export class DeploymentsService {
     commitSha: string;
     branch?: string | null;
     triggerSource: 'push' | 'pull_request';
+    pullRequestNumber?: number | null;
   }) {
     const existing = await this.prisma.deployment.findFirst({
       where: {
@@ -138,6 +143,7 @@ export class DeploymentsService {
         commitSha: input.commitSha,
         branch: input.branch ?? null,
         triggerSource: input.triggerSource,
+        pullRequestNumber: input.pullRequestNumber ?? null,
       },
     });
 
@@ -314,6 +320,12 @@ export class DeploymentsService {
       status: next,
       at: new Date().toISOString(),
     });
+
+    if (next === DeploymentStatus.build_succeeded) {
+      void this.releases.onBuildSucceeded(deploymentId).catch((err) => {
+        this.logger.error(err, 'release_after_build_failed');
+      });
+    }
   }
 
   async appendLog(deploymentId: string, chunk: { level: string; message: string; meta?: Prisma.InputJsonValue }) {

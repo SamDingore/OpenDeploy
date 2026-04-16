@@ -47,3 +47,43 @@ export enum WebhookProvider {
   github = 'github',
   clerk = 'clerk',
 }
+
+export enum ReleaseType {
+  preview = 'preview',
+  production = 'production',
+}
+
+export enum ReleaseStatus {
+  pending = 'pending',
+  provisioning_runtime = 'provisioning_runtime',
+  starting = 'starting',
+  health_checking = 'health_checking',
+  active = 'active',
+  failed = 'failed',
+  stopped = 'stopped',
+  rolled_back = 'rolled_back',
+  terminated = 'terminated',
+}
+
+export enum RuntimeInstanceStatus {
+  created = 'created',
+  starting = 'starting',
+  running = 'running',
+  unhealthy = 'unhealthy',
+  stopping = 'stopping',
+  stopped = 'stopped',
+  failed = 'failed',
+}
+
+export enum RouteBindingStatus {
+  pending = 'pending',
+  attached = 'attached',
+  detaching = 'detaching',
+  detached = 'detached',
+  failed = 'failed',
+}
+
+export enum HealthCheckType {
+  http = 'http',
+  tcp = 'tcp',
+}

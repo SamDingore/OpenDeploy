@@ -16,6 +16,17 @@ const schema = z.object({
   INTERNAL_API_SECRET: z.string().min(16),
   APP_ORIGIN: z.string().url().default('http://localhost:3000'),
   API_PUBLIC_URL: z.string().url().default('http://localhost:3001'),
+  /** Base domain for platform-managed hostnames (e.g. deploy.example.com). */
+  PLATFORM_PUBLIC_DOMAIN: z.string().min(1).default('deploy.local'),
+  /** Optional Caddy admin API (e.g. http://caddy:2019). When unset, edge reload is skipped. */
+  CADDY_ADMIN_URL: z.string().url().optional(),
+  /** ACME account email when Caddy obtains public certs (optional for local). */
+  CADDY_ACME_EMAIL: z.string().email().optional(),
+  /** Optional path to write Caddyfile for volume-based reload. */
+  CADDYFILE_PATH: z.string().optional(),
+  PREVIEW_TTL_HOURS: z.coerce.number().min(1).default(168),
+  /** 32-byte hex key for AES-256-GCM secret storage. */
+  SECRETS_ENCRYPTION_KEY: z.string().length(64).optional(),
 });
 
 export type Env = z.infer<typeof schema>;

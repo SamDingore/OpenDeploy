@@ -1,14 +1,15 @@
 # OpenDeploy
 
-OpenDeploy is an open-source deployment platform. **Phase 2** implements a **real build pipeline** (repo checkout + BuildKit image build + artifact metadata + audit trail) while still **not** exposing any public routing to customer workloads.
+OpenDeploy is an open-source deployment platform. **Phase 2** implements a **real build pipeline** (repo checkout + BuildKit image build + artifact metadata + audit trail). **Phase 3** adds **runtime releases**, **health-gated routing**, **PR previews**, **production activation**, **rollback**, and a **Caddy** edge — still on **platform-managed subdomains only** (no custom domains yet).
 
 ## Stack
 
 - **Monorepo**: pnpm workspaces, TypeScript (strict)
 - **Web**: Next.js (App Router), Tailwind, Clerk, minimal shadcn-style UI primitives
 - **API**: NestJS, Prisma, PostgreSQL, Redis, BullMQ
-- **Worker**: Node + BullMQ consumer that performs repo checkout + BuildKit builds and reports status/logs via internal APIs
-- **Local infra**: Docker Compose for Postgres + Redis (`infra/docker/docker-compose.yml`)
+- **Worker**: Node + BullMQ consumer: BuildKit builds (Phase 2) **and** runtime `docker run` / health checks / teardown (Phase 3)
+- **Edge (Phase 3)**: Caddy in Docker Compose (`infra/docker/docker-compose.yml`) on `opendeploy_runtime`
+- **Local infra**: Docker Compose for Postgres + Redis + optional Caddy (`infra/docker/docker-compose.yml`)
 
 ## Quick start
 
@@ -40,6 +41,19 @@ Build pipeline (Phase 2):
   - `BUILD_CONTEXT_PATH` (default `.`)
   - `REGISTRY_PUSH_ENABLED` (`true`/`false`)
   - `REGISTRY_REPOSITORY` (required if pushing)
+
+Runtime & routing (Phase 3):
+
+- `PLATFORM_PUBLIC_DOMAIN` (e.g. `deploy.local` — pair with `/etc/hosts` or real DNS for `*.domain`)
+- Worker: Docker CLI for `docker run`; `RUNTIME_DOCKER_NETWORK=opendeploy_runtime` (Compose creates this network)
+- Optional: `CADDY_ADMIN_URL=http://localhost:2019` after `docker compose up` (maps container admin API)
+- Optional: `CADDY_ACME_EMAIL` for real-certificate issuance on public hostnames
+- Optional: `SECRETS_ENCRYPTION_KEY` (64 hex chars) for `EnvironmentSecret` storage
+- `PREVIEW_TTL_HOURS` (default 168) for orphaned preview GC
+
+Web (`apps/web/.env.local`):
+
+- `NEXT_PUBLIC_PLATFORM_DOMAIN` — optional display/fallback; should match `PLATFORM_PUBLIC_DOMAIN`
 
 ### 3) Migrate / generate
 
@@ -86,15 +100,12 @@ pnpm --filter @opendeploy/web build
 
 - `docs/architecture/phase-1.md`
 - `docs/architecture/phase-2.md`
+- `docs/architecture/phase-3.md`
 - `docs/security/threat-model-phase-1.md`
 - `docs/security/worker-isolation-phase-2.md`
+- `docs/security/runtime-routing-phase-3.md`
 - `docs/adr/` — key architectural decisions
 
-## Phase 3+ (remaining work)
+## Phase 4+ (remaining work)
 
-- Stronger worker sandboxing (rootless BuildKit, explicit network policy, resource limits)
-- Preview URL routing and edge (Caddy-first) TLS
-- GitHub webhook → deployment automation with branch allowlists for production
-- Clerk webhooks (user lifecycle) wired end-to-end
-- Object storage for artifacts/logs, autoscaling workers, billing, custom domains
-- Sentry + centralized metrics
+See **Phase 4** list in `docs/architecture/phase-3.md` (custom domains with safe ACME strategy, stronger isolation, multi-region edge, progressive delivery, optional Kubernetes backends, autoscaling, persistent volumes for stateful apps).

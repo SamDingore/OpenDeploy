@@ -15,5 +15,25 @@ services:
     ports:
       - '6379:6379'
 
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      CADDY_ADMIN: 0.0.0.0:2019
+    ports:
+      - '80:80'
+      - '443:443'
+      - '2019:2019'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    command: ['caddy', 'run', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile']
+    networks:
+      - opendeploy_runtime
+
+networks:
+  opendeploy_runtime:
+    name: opendeploy_runtime
+
 volumes:
   opendeploy_pg:
+  caddy_data:

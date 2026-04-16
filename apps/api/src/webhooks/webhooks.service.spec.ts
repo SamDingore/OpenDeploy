@@ -14,7 +14,9 @@ function svc(
     };
   },
 ) {
-  return new WebhooksService(env, prisma as never);
+  const deployments = {} as never;
+  const releases = { teardownPreviewForPr: vi.fn() } as never;
+  return new WebhooksService(env, prisma as never, deployments, releases);
 }
 
 describe('WebhooksService', () => {

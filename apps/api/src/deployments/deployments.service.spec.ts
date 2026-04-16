@@ -15,6 +15,13 @@ describe('DeploymentsService', () => {
       project: {
         findFirst: vi.fn().mockResolvedValue(project),
       },
+      repositoryLink: {
+        findUnique: vi.fn().mockResolvedValue({
+          fullName: 'acme/app',
+          defaultBranch: 'main',
+          installation: { providerInstallationId: 'inst_1' },
+        }),
+      },
       deployment: {
         create: vi.fn().mockResolvedValue({
           id: 'd1',
@@ -32,17 +39,22 @@ describe('DeploymentsService', () => {
       },
       deploymentAttempt: {
         create: vi.fn().mockResolvedValue({ id: 'a1' }),
+        update: vi.fn().mockResolvedValue({}),
       },
     };
     const queue = { enqueue: vi.fn() };
     const audit = { record: vi.fn() };
     const events = { emit: vi.fn() };
+    const github = { resolveCommitSha: vi.fn().mockResolvedValue({ sha: 'deadbeef' }) };
+    const releases = { onBuildSucceeded: vi.fn().mockResolvedValue(undefined) };
 
     const svc = new DeploymentsService(
       prisma as never,
       queue as never,
       audit as never,
       events as never,
+      github as never,
+      releases as never,
     );
 
     await svc.create({

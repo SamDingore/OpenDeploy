@@ -30,10 +30,10 @@ Deployments now track build phases:
 
 ## Data model additions
 
-- **`Deployment`**: `commitSha`, `triggerSource`, build timing fields, `failureCode`/`failureDetail`.
-- **`DeploymentAttempt`**: attempt metadata (`attemptNumber`, `queueJobId`, `workerNodeId`, timestamps).
-- **`BuildArtifact`**: tag/digest + BuildKit metadata JSON (best-effort).
-- **`SourceSnapshot`**: masked clone URL and pinned SHA reference for auditability.
+- `**Deployment`**: `commitSha`, `triggerSource`, build timing fields, `failureCode`/`failureDetail`.
+- `**DeploymentAttempt**`: attempt metadata (`attemptNumber`, `queueJobId`, `workerNodeId`, timestamps).
+- `**BuildArtifact**`: tag/digest + BuildKit metadata JSON (best-effort).
+- `**SourceSnapshot**`: masked clone URL and pinned SHA reference for auditability.
 
 ## Operational flow (happy path)
 
@@ -44,10 +44,7 @@ Deployments now track build phases:
 5. Worker runs a **BuildKit-backed build** via `docker buildx build` and streams logs to the control plane.
 6. Worker persists `BuildArtifact` + `SourceSnapshot`, then marks `build_succeeded` (or `build_failed` with classification).
 
-## Phase 3 TODO (routing phase)
+## Phase 3 (routing phase) — see `phase-3.md`
 
-- Edge routing + preview URLs
-- TLS automation and custom domains
-- Runtime release orchestration (separate from build)
-- Rollbacks and traffic switching
+Phase 3 is documented in `docs/architecture/phase-3.md` (runtime releases, Caddy edge, PR previews, production cutover, rollback, audit).
 

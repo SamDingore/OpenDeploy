@@ -10,6 +10,7 @@ import { InternalModule } from './internal/internal.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QueueModule } from './queue/queue.module';
+import { ReleasesModule } from './releases/releases.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { WorkersModule } from './workers/workers.module';
@@ -25,6 +26,7 @@ import { WorkersModule } from './workers/workers.module';
     ProjectsModule,
     GithubModule,
     DeploymentsModule,
+    ReleasesModule,
     WebhooksModule,
     InternalModule,
     WorkersModule,

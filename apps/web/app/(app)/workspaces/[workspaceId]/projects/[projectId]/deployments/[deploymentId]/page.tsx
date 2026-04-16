@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { DeploymentLive } from '@/components/deployment-live';
+import { PromoteDeploymentButton } from '@/components/promote-deployment-button';
 import { RetryBuildButton } from '@/components/retry-build-button';
 import { serverApiFetch } from '@/lib/server-api';
 
@@ -44,12 +45,19 @@ export default async function DeploymentPage({
           {deployment.id} · {new Date(deployment.createdAt).toLocaleString()}
         </p>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <RetryBuildButton
           workspaceId={workspaceId}
           projectId={projectId}
           deploymentId={deploymentId}
         />
+        {deployment.status === 'build_succeeded' ? (
+          <PromoteDeploymentButton
+            workspaceId={workspaceId}
+            projectId={projectId}
+            deploymentId={deploymentId}
+          />
+        ) : null}
         <div className="text-xs text-zinc-600">
           {deployment.commitSha ? (
             <span className="font-mono">sha {deployment.commitSha.slice(0, 12)}</span>

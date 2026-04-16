@@ -11,6 +11,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { registerRuntimeWorkers } from './runtime-worker';
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -420,6 +421,8 @@ async function main(): Promise<void> {
   w.on('failed', (job, err) => {
     console.error('job_failed', job?.id, err);
   });
+
+  registerRuntimeWorkers(redis, api, secret, workerId);
 
   console.info('worker_online', { workerId, queue: DEPLOYMENT_QUEUE_NAME });
 }

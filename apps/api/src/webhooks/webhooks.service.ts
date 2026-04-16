@@ -5,6 +5,7 @@ import type { Env } from '../config/env';
 import { OPENDEPLOY_ENV } from '../config/env.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeploymentsService } from '../deployments/deployments.service';
+import { ReleasesService } from '../releases/releases.service';
 
 @Injectable()
 export class WebhooksService {
@@ -12,6 +13,7 @@ export class WebhooksService {
     @Inject(OPENDEPLOY_ENV) private readonly env: Env,
     private readonly prisma: PrismaService,
     private readonly deployments: DeploymentsService,
+    private readonly releases: ReleasesService,
   ) {}
 
   async persistGitHubEvent(input: {
@@ -78,6 +80,7 @@ export class WebhooksService {
 
       const inst = await this.prisma.gitProviderInstallation.findUnique({
         where: { providerInstallationId: installationId },
+        include: { workspace: true },
       });
       if (!inst) {
         // installation not linked to any workspace yet
@@ -89,8 +92,14 @@ export class WebhooksService {
       });
       if (!link) return;
 
+      const defaultBranch = link.defaultBranch ?? 'main';
+      const productionBranch = inst.workspace.productionBranchRule ?? defaultBranch;
+      if (!branch || branch !== productionBranch) {
+        return;
+      }
+
       const env = await this.prisma.environment.findFirst({
-        where: { projectId: link.projectId, type: 'preview' },
+        where: { projectId: link.projectId, type: 'production' },
       });
       if (!env) return;
 
@@ -109,8 +118,10 @@ export class WebhooksService {
       const repoFullName = String(payload?.repository?.full_name ?? '');
       const sha = String(payload?.pull_request?.head?.sha ?? '');
       const branch = String(payload?.pull_request?.head?.ref ?? '') || null;
+      const action = String(payload?.action ?? '');
+      const prNumber = Number(payload?.number);
 
-      if (!installationId || !repoFullName || !sha) {
+      if (!installationId || !repoFullName || !Number.isFinite(prNumber)) {
         throw new Error('github_pr_payload_missing_fields');
       }
 
@@ -129,6 +140,20 @@ export class WebhooksService {
       });
       if (!env) return;
 
+      if (action === 'closed') {
+        await this.releases.teardownPreviewForPr({
+          workspaceId: inst.workspaceId,
+          projectId: link.projectId,
+          environmentId: env.id,
+          pullRequestNumber: prNumber,
+        });
+        return;
+      }
+
+      if (!sha) {
+        throw new Error('github_pr_payload_missing_fields');
+      }
+
       await this.deployments.createFromWebhook({
         workspaceId: inst.workspaceId,
         projectId: link.projectId,
@@ -136,6 +161,7 @@ export class WebhooksService {
         commitSha: sha,
         branch,
         triggerSource: 'pull_request',
+        pullRequestNumber: prNumber,
       });
     }
   }
