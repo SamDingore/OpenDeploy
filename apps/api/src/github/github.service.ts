@@ -65,6 +65,65 @@ export class GithubService {
     return { token: j.token, expiresAt: j.expires_at };
   }
 
+  async listAppInstallations(): Promise<
+    { providerInstallationId: string; accountLogin: string | null; accountType: string | null }[]
+  > {
+    const jwt = await this.createAppJwt();
+    const res = await fetch('https://api.github.com/app/installations?per_page=100', {
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${jwt}`,
+        'x-github-api-version': '2022-11-28',
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new BadRequestException(`github_installations_list_failed:${res.status}:${text}`);
+    }
+    const rows = (await res.json()) as Array<{
+      id: number;
+      account?: { login?: string; type?: string } | null;
+    }>;
+    return rows.map((r) => ({
+      providerInstallationId: String(r.id),
+      accountLogin: r.account?.login ?? null,
+      accountType: r.account?.type ?? null,
+    }));
+  }
+
+  async listInstallationRepositories(input: { providerInstallationId: string }): Promise<
+    { providerRepoId: string; fullName: string; defaultBranch: string | null; private: boolean }[]
+  > {
+    const { token } = await this.createInstallationAccessToken(input.providerInstallationId);
+    const res = await fetch('https://api.github.com/installation/repositories?per_page=100', {
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `token ${token}`,
+        'x-github-api-version': '2022-11-28',
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new BadRequestException(`github_installation_repos_failed:${res.status}:${text}`);
+    }
+    const j = (await res.json()) as {
+      repositories?: Array<{
+        id: number;
+        full_name?: string;
+        default_branch?: string;
+        private?: boolean;
+      }>;
+    };
+    return (j.repositories ?? [])
+      .filter((r) => Boolean(r.full_name))
+      .map((r) => ({
+        providerRepoId: String(r.id),
+        fullName: String(r.full_name),
+        defaultBranch: r.default_branch ?? null,
+        private: Boolean(r.private),
+      }));
+  }
+
   getInstallUrl(workspaceId: string): string {
     const clientId = this.env.GITHUB_APP_CLIENT_ID;
     if (!clientId) {
@@ -102,6 +161,59 @@ export class GithubService {
       action: 'github.installation.linked',
       resource: 'git_installation',
       resourceId: row.id,
+    });
+    return row;
+  }
+
+  async linkProjectRepository(input: {
+    workspaceId: string;
+    projectId: string;
+    actorUserId: string;
+    providerInstallationId: string;
+    providerRepoId: string;
+    fullName: string;
+    defaultBranch?: string | null;
+  }) {
+    const project = await this.prisma.project.findFirst({
+      where: { id: input.projectId, workspaceId: input.workspaceId },
+      select: { id: true },
+    });
+    if (!project) {
+      throw new BadRequestException('project_not_found');
+    }
+
+    const installation = await this.prisma.gitProviderInstallation.findUnique({
+      where: { providerInstallationId: input.providerInstallationId },
+      select: { id: true, workspaceId: true },
+    });
+    if (!installation || installation.workspaceId !== input.workspaceId) {
+      throw new BadRequestException('installation_not_linked_to_workspace');
+    }
+
+    const row = await this.prisma.repositoryLink.upsert({
+      where: { projectId: input.projectId },
+      update: {
+        installationId: installation.id,
+        providerRepoId: input.providerRepoId,
+        fullName: input.fullName,
+        defaultBranch: input.defaultBranch ?? null,
+      },
+      create: {
+        projectId: input.projectId,
+        installationId: installation.id,
+        providerRepoId: input.providerRepoId,
+        fullName: input.fullName,
+        defaultBranch: input.defaultBranch ?? null,
+      },
+    });
+
+    await this.audit.record({
+      workspaceId: input.workspaceId,
+      actorUserId: input.actorUserId,
+      action: 'github.repository.linked',
+      resource: 'repository_link',
+      resourceId: row.id,
+      metadata: { projectId: input.projectId, fullName: input.fullName },
     });
     return row;
   }

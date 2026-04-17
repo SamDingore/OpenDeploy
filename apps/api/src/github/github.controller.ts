@@ -17,6 +17,21 @@ class LinkInstallationDto {
   accountLogin?: string;
 }
 
+class LinkProjectRepositoryDto {
+  @IsString()
+  providerInstallationId!: string;
+
+  @IsString()
+  providerRepoId!: string;
+
+  @IsString()
+  fullName!: string;
+
+  @IsOptional()
+  @IsString()
+  defaultBranch?: string;
+}
+
 @Controller('workspaces/:workspaceId/github')
 @UseGuards(ClerkAuthGuard, WorkspaceAccessGuard)
 export class GithubController {
@@ -41,6 +56,40 @@ export class GithubController {
       actorUserId: userId,
       providerInstallationId: body.providerInstallationId,
       accountLogin: body.accountLogin,
+    });
+    return success(row);
+  }
+
+  @Get('installations')
+  @MinWorkspaceRole(WorkspaceRole.ADMIN)
+  async installations() {
+    const rows = await this.github.listAppInstallations();
+    return success(rows);
+  }
+
+  @Get('installations/:providerInstallationId/repositories')
+  @MinWorkspaceRole(WorkspaceRole.ADMIN)
+  async installationRepositories(@Param('providerInstallationId') providerInstallationId: string) {
+    const rows = await this.github.listInstallationRepositories({ providerInstallationId });
+    return success(rows);
+  }
+
+  @Post('projects/:projectId/link-repository')
+  @MinWorkspaceRole(WorkspaceRole.ADMIN)
+  async linkProjectRepository(
+    @Param('workspaceId') workspaceId: string,
+    @Param('projectId') projectId: string,
+    @CurrentUserId() userId: string,
+    @Body() body: LinkProjectRepositoryDto,
+  ) {
+    const row = await this.github.linkProjectRepository({
+      workspaceId,
+      projectId,
+      actorUserId: userId,
+      providerInstallationId: body.providerInstallationId,
+      providerRepoId: body.providerRepoId,
+      fullName: body.fullName,
+      defaultBranch: body.defaultBranch,
     });
     return success(row);
   }

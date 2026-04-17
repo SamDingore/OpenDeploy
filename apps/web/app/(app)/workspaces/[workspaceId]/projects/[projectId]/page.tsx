@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CreateDeploymentForm } from '@/components/create-deployment-form';
+import { GithubIntegrationCard } from '@/components/github-integration-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { serverApiFetch } from '@/lib/server-api';
 
@@ -8,6 +9,11 @@ type Project = {
   name: string;
   slug: string;
   environments: { id: string; name: string; slug: string; type: string }[];
+  repositoryLinks: {
+    id: string;
+    fullName: string;
+    defaultBranch: string | null;
+  }[];
 };
 
 type Deployment = { id: string; status: string; createdAt: string };
@@ -71,6 +77,12 @@ export default async function ProjectPage({
         workspaceId={workspaceId}
         projectId={projectId}
         environments={project.environments}
+      />
+
+      <GithubIntegrationCard
+        workspaceId={workspaceId}
+        projectId={projectId}
+        existingRepoLink={project.repositoryLinks[0] ?? null}
       />
 
       <div>
