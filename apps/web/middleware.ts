@@ -1,7 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
+import { type NextFetchEvent, type NextRequest } from 'next/server';
 
-const isPublic = createRouteMatcher(['/sign-in(.*)']);
+const isPublic = createRouteMatcher(['/sign-in(.*)', '/sign-up(.*)', '/setup(.*)']);
 
 const clerk = clerkMiddleware(async (auth, req) => {
   if (!isPublic(req)) {
@@ -10,9 +10,6 @@ const clerk = clerkMiddleware(async (auth, req) => {
 });
 
 export default function middleware(req: NextRequest, event: NextFetchEvent) {
-  if (!process.env['NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'] || !process.env['CLERK_SECRET_KEY']) {
-    return NextResponse.next();
-  }
   return clerk(req, event);
 }
 
