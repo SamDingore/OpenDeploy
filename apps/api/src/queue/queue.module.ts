@@ -12,12 +12,13 @@ import { OPENDEPLOY_ENV } from '../config/env.constants';
 import { DeploymentQueueService } from './deployment-queue.service';
 import { DomainQueueService } from './domain-queue.service';
 import { ReleaseQueueService } from './release-queue.service';
-
-export const REDIS = 'REDIS';
-export const DEPLOYMENT_QUEUE = 'DEPLOYMENT_QUEUE';
-export const RELEASE_QUEUE = 'RELEASE_QUEUE';
-export const RELEASE_TEARDOWN_QUEUE = 'RELEASE_TEARDOWN_QUEUE';
-export const DOMAIN_QUEUE = 'DOMAIN_QUEUE';
+import {
+  DEPLOYMENT_QUEUE,
+  DOMAIN_QUEUE,
+  REDIS,
+  RELEASE_QUEUE,
+  RELEASE_TEARDOWN_QUEUE,
+} from './queue.tokens';
 
 @Global()
 @Module({

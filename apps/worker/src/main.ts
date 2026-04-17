@@ -11,11 +11,18 @@ import {
   runWithTraceCarrier,
 } from '@opendeploy/shared';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { config as dotenvConfig } from 'dotenv';
 import { registerDomainWorkers } from './domain-worker';
 import { registerRuntimeWorkers } from './runtime-worker';
+
+const rootEnv = resolve(__dirname, '../../..', '.env');
+if (existsSync(rootEnv)) {
+  dotenvConfig({ path: rootEnv });
+}
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -44,16 +51,25 @@ async function register(
     workerIdentityFingerprint?: string;
   },
 ): Promise<string> {
-  const res = await fetch(`${api}/internal/workers/register`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-internal-secret': secret },
-    body: JSON.stringify({
-      name,
-      nodePoolName: opts.nodePoolName,
-      rootlessCapable: opts.rootlessCapable,
-      workerIdentityFingerprint: opts.workerIdentityFingerprint,
-    }),
-  });
+  const registerUrl = `${api}/internal/workers/register`;
+  let res: Response;
+  try {
+    res = await fetch(registerUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-secret': secret },
+      body: JSON.stringify({
+        name,
+        nodePoolName: opts.nodePoolName,
+        rootlessCapable: opts.rootlessCapable,
+        workerIdentityFingerprint: opts.workerIdentityFingerprint,
+      }),
+    });
+  } catch (err) {
+    throw new Error(
+      `worker_register_unreachable:${registerUrl} (is API running and API_PUBLIC_URL correct?)`,
+      { cause: err },
+    );
+  }
   const j = (await res.json()) as { ok?: boolean; data?: { workerId: string } };
   if (!j.ok || !j.data?.workerId) {
     throw new Error('worker_register_failed');

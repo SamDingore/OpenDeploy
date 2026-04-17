@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { createTraceCarrierFromActiveContext, type DomainJobPayload } from '@opendeploy/shared';
-import { DOMAIN_QUEUE } from './queue.module';
+import { DOMAIN_QUEUE } from './queue.tokens';
 
 @Injectable()
 export class DomainQueueService {

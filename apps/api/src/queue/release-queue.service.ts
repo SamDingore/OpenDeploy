@@ -5,7 +5,7 @@ import {
   type ReleaseJobPayload,
   type ReleaseTeardownPayload,
 } from '@opendeploy/shared';
-import { RELEASE_QUEUE, RELEASE_TEARDOWN_QUEUE } from './queue.module';
+import { RELEASE_QUEUE, RELEASE_TEARDOWN_QUEUE } from './queue.tokens';
 
 @Injectable()
 export class ReleaseQueueService {

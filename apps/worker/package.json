@@ -13,6 +13,7 @@
     "@opendeploy/telemetry": "workspace:*",
     "@opendeploy/shared": "workspace:*",
     "bullmq": "^5.34.5",
+    "dotenv": "16.4.5",
     "ioredis": "^5.4.2"
   },
   "devDependencies": {

@@ -6,8 +6,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "postinstall": "pnpm db:generate",
+    "postinstall": "pnpm build:packages",
     "build": "pnpm -r run build",
+    "build:packages": "pnpm -r --filter \"./packages/*\" --if-present run build",
     "dev": "pnpm run --parallel --filter @opendeploy/api --filter @opendeploy/web dev",
     "dev:api": "pnpm --filter @opendeploy/api dev",
     "dev:web": "pnpm --filter @opendeploy/web dev",

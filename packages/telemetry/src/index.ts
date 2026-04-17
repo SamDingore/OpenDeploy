@@ -16,6 +16,15 @@ export function startOpenDeployOtel(serviceName: string): void {
   if (process.env['OTEL_SDK_DISABLED'] === 'true') {
     return;
   }
+  // In local/dev environments, skip exporter startup unless an OTLP endpoint is configured.
+  // This avoids repeated ECONNREFUSED noise from the default localhost:4318 endpoint.
+  if (
+    process.env['NODE_ENV'] !== 'production' &&
+    !process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] &&
+    process.env['OTEL_SDK_DISABLED'] !== 'false'
+  ) {
+    return;
+  }
   if (sdk) {
     return;
   }

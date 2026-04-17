@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { createTraceCarrierFromActiveContext, type DeploymentJobPayload } from '@opendeploy/shared';
-import { DEPLOYMENT_QUEUE } from './queue.module';
+import { DEPLOYMENT_QUEUE } from './queue.tokens';
 
 @Injectable()
 export class DeploymentQueueService {
