@@ -10,7 +10,7 @@ import {
   isRetryableBuildFailure,
   runWithTraceCarrier,
 } from '@opendeploy/shared';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -88,6 +88,11 @@ async function getBuildInput(
       repoFullName: string;
       providerInstallationId: string;
       defaultBranch: string | null;
+      framework: string | null;
+      installCommand: string | null;
+      buildCommand: string | null;
+      startCommand: string | null;
+      rootDirectory: string | null;
     }
   | { ok: false; error: string }
 > {
@@ -107,7 +112,33 @@ async function getBuildInput(
     repoFullName: String(j.data.repoFullName),
     providerInstallationId: String(j.data.providerInstallationId),
     defaultBranch: (j.data.defaultBranch ?? null) as string | null,
+    framework: (j.data.framework ?? null) as string | null,
+    installCommand: (j.data.installCommand ?? null) as string | null,
+    buildCommand: (j.data.buildCommand ?? null) as string | null,
+    startCommand: (j.data.startCommand ?? null) as string | null,
+    rootDirectory: (j.data.rootDirectory ?? null) as string | null,
   };
+}
+
+function shQuote(input: string): string {
+  return `'${input.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function buildDockerfileFromCommands(input: {
+  installCommand: string;
+  buildCommand: string;
+  startCommand: string;
+}): string {
+  return [
+    'FROM node:20-alpine',
+    'WORKDIR /app',
+    'COPY . .',
+    `RUN sh -lc ${shQuote(input.installCommand)}`,
+    `RUN sh -lc ${shQuote(input.buildCommand)}`,
+    'EXPOSE 3000',
+    `CMD ["sh","-lc",${JSON.stringify(input.startCommand)}]`,
+    '',
+  ].join('\n');
 }
 
 async function getInstallationToken(
@@ -274,7 +305,17 @@ async function processJob(
   }
 
   const workspace = await mkdtemp(join(tmpdir(), 'opendeploy-build-'));
-  const { commitSha, repoFullName, providerInstallationId, defaultBranch } = buildInput;
+  const {
+    commitSha,
+    repoFullName,
+    providerInstallationId,
+    defaultBranch,
+    framework,
+    installCommand,
+    buildCommand,
+    startCommand,
+    rootDirectory,
+  } = buildInput;
 
   const short = commitSha.slice(0, 12);
   const pushEnabled = process.env.REGISTRY_PUSH_ENABLED === 'true';
@@ -345,8 +386,47 @@ async function processJob(
 
     await patchStatus(api, secret, deploymentId, { status: DeploymentStatus.preparing_context });
 
-    const dockerfilePath = process.env.DOCKERFILE_PATH ?? 'Dockerfile';
-    const contextPath = process.env.BUILD_CONTEXT_PATH ?? '.';
+    const normalizedRootDirectory =
+      rootDirectory && rootDirectory.trim().length > 0 ? rootDirectory.trim().replace(/^\/+|\/+$/g, '') : '.';
+    const contextPath = normalizedRootDirectory || '.';
+    const commandMode =
+      Boolean(installCommand?.trim()) &&
+      Boolean(buildCommand?.trim()) &&
+      Boolean(startCommand?.trim());
+    let dockerfilePath = process.env.DOCKERFILE_PATH ?? 'Dockerfile';
+
+    if (contextPath !== '.') {
+      const resolvedContext = resolve(workspace, contextPath);
+      try {
+        await access(resolvedContext);
+      } catch {
+        await patchStatus(api, secret, deploymentId, {
+          status: DeploymentStatus.build_failed,
+          failureCode: BuildFailureCode.invalid_build_context,
+          failureDetail: `root_directory_not_found:${contextPath}`,
+        });
+        return;
+      }
+    }
+
+    if (commandMode) {
+      const generatedDockerfilePath =
+        contextPath === '.' ? '.opendeploy.generated.Dockerfile' : `${contextPath}/.opendeploy.generated.Dockerfile`;
+      const dockerfileContent = buildDockerfileFromCommands({
+        installCommand: String(installCommand).trim(),
+        buildCommand: String(buildCommand).trim(),
+        startCommand: String(startCommand).trim(),
+      });
+      await writeFile(join(workspace, generatedDockerfilePath), dockerfileContent, 'utf8');
+      dockerfilePath = generatedDockerfilePath;
+      await postLog(
+        api,
+        secret,
+        deploymentId,
+        'info',
+        `Using ${framework ?? 'custom'} preset with generated Dockerfile in ${contextPath}`,
+      );
+    }
 
     await patchStatus(api, secret, deploymentId, { status: DeploymentStatus.building_image });
 
@@ -418,6 +498,9 @@ async function processJob(
           commitSha,
           cloneUrlMasked,
           defaultBranch,
+          // Best-effort debug context for deployment configuration.
+          framework: framework ?? undefined,
+          rootDirectory: rootDirectory ?? undefined,
         },
       }),
     });

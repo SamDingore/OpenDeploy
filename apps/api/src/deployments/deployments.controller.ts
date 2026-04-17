@@ -48,6 +48,11 @@ export class DeploymentsController {
       environmentId: body.environmentId,
       actorUserId: userId,
       gitRef: body.gitRef,
+      framework: body.framework,
+      installCommand: body.installCommand,
+      buildCommand: body.buildCommand,
+      startCommand: body.startCommand,
+      rootDirectory: body.rootDirectory,
     });
     return success(result);
   }

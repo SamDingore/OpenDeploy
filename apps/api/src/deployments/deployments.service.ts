@@ -5,7 +5,8 @@ import {
   assertTerminalFailureReason,
   canTransition,
 } from '@opendeploy/shared';
-import type { BuildFailureCode as PrismaFail, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { BuildFailureCode as PrismaFail } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { GithubService } from '../github/github.service';
 import { DeploymentQueueService } from '../queue/deployment-queue.service';
@@ -17,6 +18,7 @@ import { CapacityService } from '../operations/capacity.service';
 @Injectable()
 export class DeploymentsService {
   private readonly logger = new Logger(DeploymentsService.name);
+  private readonly logWriteTails = new Map<string, Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -34,6 +36,11 @@ export class DeploymentsService {
     environmentId: string;
     actorUserId: string;
     gitRef?: string;
+    framework?: string;
+    installCommand?: string;
+    buildCommand?: string;
+    startCommand?: string;
+    rootDirectory?: string;
   }) {
     const project = await this.prisma.project.findFirst({
       where: { id: input.projectId, workspaceId: input.workspaceId },
@@ -74,6 +81,11 @@ export class DeploymentsService {
         branch: repoLink.defaultBranch ?? null,
         commitSha: sha,
         triggerSource: 'manual',
+        framework: input.framework?.trim() || null,
+        installCommand: input.installCommand?.trim() || null,
+        buildCommand: input.buildCommand?.trim() || null,
+        startCommand: input.startCommand?.trim() || null,
+        rootDirectory: input.rootDirectory?.trim() || null,
       },
     });
 
@@ -90,7 +102,12 @@ export class DeploymentsService {
       action: 'deployment.created',
       resource: 'deployment',
       resourceId: deployment.id,
-      metadata: { projectId: input.projectId, environmentId: input.environmentId },
+      metadata: {
+        projectId: input.projectId,
+        environmentId: input.environmentId,
+        framework: input.framework?.trim() || null,
+        rootDirectory: input.rootDirectory?.trim() || null,
+      },
     });
 
     await this.transitionStatus(
@@ -337,30 +354,49 @@ export class DeploymentsService {
   }
 
   async appendLog(deploymentId: string, chunk: { level: string; message: string; meta?: Prisma.InputJsonValue }) {
-    const last = await this.prisma.deploymentLogChunk.findFirst({
-      where: { deploymentId },
-      orderBy: { seq: 'desc' },
-      select: { seq: true },
+    const previousTail = this.logWriteTails.get(deploymentId) ?? Promise.resolve();
+    let releaseCurrent!: () => void;
+    const currentStep = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
     });
-    const seq = (last?.seq ?? 0) + 1;
-    const row = await this.prisma.deploymentLogChunk.create({
-      data: {
+    const currentTail = previousTail
+      .catch(() => undefined)
+      .then(() => currentStep);
+    this.logWriteTails.set(deploymentId, currentTail);
+
+    await previousTail.catch(() => undefined);
+
+    try {
+      const last = await this.prisma.deploymentLogChunk.findFirst({
+        where: { deploymentId },
+        orderBy: { seq: 'desc' },
+        select: { seq: true },
+      });
+      const seq = (last?.seq ?? 0) + 1;
+      const row = await this.prisma.deploymentLogChunk.create({
+        data: {
+          deploymentId,
+          seq,
+          level: chunk.level,
+          message: chunk.message,
+          meta: chunk.meta,
+        },
+      });
+      this.events.emit({
+        type: 'log',
         deploymentId,
-        seq,
-        level: chunk.level,
-        message: chunk.message,
-        meta: chunk.meta,
-      },
-    });
-    this.events.emit({
-      type: 'log',
-      deploymentId,
-      seq: row.seq,
-      level: row.level,
-      message: row.message,
-      at: row.createdAt.toISOString(),
-    });
-    return row;
+        seq: row.seq,
+        level: row.level,
+        message: row.message,
+        at: row.createdAt.toISOString(),
+      });
+      return row;
+    } finally {
+      releaseCurrent();
+      if (this.logWriteTails.get(deploymentId) === currentTail) {
+        this.logWriteTails.delete(deploymentId);
+      }
+    }
   }
 
   /** Worker-internal: transition with optional system audit */

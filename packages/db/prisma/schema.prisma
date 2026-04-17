@@ -406,6 +406,11 @@ model Deployment {
   failureCode     BuildFailureCode?
   failureDetail   String?
   gitRef          String? // optional ref hint (branch/tag) for manual triggers
+  framework       String?
+  installCommand  String?
+  buildCommand    String?
+  startCommand    String?
+  rootDirectory   String?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 

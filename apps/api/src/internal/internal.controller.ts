@@ -117,6 +117,11 @@ export class InternalController {
       repoFullName: link.fullName,
       providerInstallationId: link.installation.providerInstallationId,
       defaultBranch: link.defaultBranch,
+      framework: dep.framework ?? null,
+      installCommand: dep.installCommand ?? null,
+      buildCommand: dep.buildCommand ?? null,
+      startCommand: dep.startCommand ?? null,
+      rootDirectory: dep.rootDirectory ?? null,
     });
   }
 

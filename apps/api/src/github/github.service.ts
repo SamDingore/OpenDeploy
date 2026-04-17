@@ -1,9 +1,10 @@
 import { Inject, Injectable, BadRequestException } from '@nestjs/common';
+import { createPrivateKey } from 'crypto';
 import type { Env } from '../config/env';
 import { OPENDEPLOY_ENV } from '../config/env.constants';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { importPKCS8, SignJWT } from 'jose';
+import { SignJWT } from 'jose';
 
 @Injectable()
 export class GithubService {
@@ -19,16 +20,41 @@ export class GithubService {
     if (!appId || !privateKeyPem) {
       throw new BadRequestException('github_app_not_configured');
     }
-    // Support envs that store PEM with literal "\n"
-    const normalizedKey = privateKeyPem.includes('\\n')
+    let normalizedKey = privateKeyPem.includes('\\n')
       ? privateKeyPem.replace(/\\n/g, '\n')
       : privateKeyPem;
+    normalizedKey = normalizedKey.replace(/\r/g, '').trim();
+
+    // Support accidental single-line PEMs copied into .env.
+    if (
+      normalizedKey.includes('-----BEGIN') &&
+      normalizedKey.includes('-----END') &&
+      !normalizedKey.includes('\n')
+    ) {
+      const compact = normalizedKey.replace(/\s+/g, ' ').trim();
+      const beginMatch = compact.match(/-----BEGIN ([^-]+)-----/);
+      const endMatch = compact.match(/-----END ([^-]+)-----/);
+      const body = compact
+        .replace(/-----BEGIN [^-]+-----/, '')
+        .replace(/-----END [^-]+-----/, '')
+        .replace(/\s+/g, '');
+      if (!beginMatch || !endMatch || !body) {
+        throw new BadRequestException('github_app_private_key_invalid_pem');
+      }
+      normalizedKey = normalizedKey
+        .replace(/[\s\S]*/, `-----BEGIN ${beginMatch[1]}-----\n${body}\n-----END ${endMatch[1]}-----`);
+    }
     return { appId, privateKeyPem: normalizedKey };
   }
 
   private async createAppJwt(): Promise<string> {
     const { appId, privateKeyPem } = this.requireAppConfig();
-    const key = await importPKCS8(privateKeyPem, 'RS256');
+    let key: ReturnType<typeof createPrivateKey>;
+    try {
+      key = createPrivateKey({ key: privateKeyPem, format: 'pem' });
+    } catch {
+      throw new BadRequestException('github_app_private_key_invalid_or_unsupported');
+    }
     const now = Math.floor(Date.now() / 1000);
     return await new SignJWT({})
       .setProtectedHeader({ alg: 'RS256' })
