@@ -5,14 +5,18 @@ import {
   Get,
   Param,
   Post,
+  Req,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { CurrentClerkAuth } from '../../auth/clerk-auth.decorator';
 import { ClerkAuthGuard } from '../../auth/clerk-auth.guard';
 import type { ClerkJwtPayload } from '../../auth/clerk-auth.types';
 import type { DeploymentStatus } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DeploymentOrchestratorService } from './deployment-orchestrator.service';
 
 function deploymentStatusToApi(status: DeploymentStatus): string {
   switch (status) {
@@ -70,7 +74,10 @@ function requireClerkUserId(auth: ClerkJwtPayload | undefined): string {
 @Controller('apis/projects')
 @UseGuards(ClerkAuthGuard)
 export class ProjectsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly deploymentOrchestrator: DeploymentOrchestratorService,
+  ) {}
 
   private async requireProject(projectId: string, clerkUserId: string) {
     const project = await this.prisma.project.findFirst({
@@ -192,7 +199,8 @@ export class ProjectsController {
     const project = await this.requireProject(projectId, clerkUserId);
 
     const projectName = body.projectName?.trim() || project.name;
-    const frameworkPreset = body.frameworkPreset?.trim() || project.framework || 'Unknown';
+    const frameworkPreset =
+      body.frameworkPreset?.trim() || project.framework || 'Unknown';
     const rootDirectory = body.rootDirectory?.trim() || './';
     const buildCommand = body.buildCommand?.trim() || null;
     const outputDirectory = body.outputDirectory?.trim() || null;
@@ -226,6 +234,7 @@ export class ProjectsController {
         },
       },
     });
+    this.deploymentOrchestrator.enqueue(deployment.id);
 
     return {
       deployment: {
@@ -289,6 +298,52 @@ export class ProjectsController {
         })),
       },
     };
+  }
+
+  @Get(':id/deployments/:deploymentId/stream')
+  async streamDeployment(
+    @CurrentClerkAuth() auth: ClerkJwtPayload | undefined,
+    @Param('id') projectId: string,
+    @Param('deploymentId') deploymentId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const clerkUserId = requireClerkUserId(auth);
+    await this.requireProject(projectId, clerkUserId);
+
+    const deployment = await this.prisma.deployment.findFirst({
+      where: { id: deploymentId, projectId },
+      select: { id: true },
+    });
+    if (!deployment) {
+      throw new BadRequestException('Deployment not found');
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const writeEvent = (event: unknown) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    const unsubscribe = this.deploymentOrchestrator.subscribe(
+      deploymentId,
+      (event) => {
+        writeEvent(event);
+      },
+    );
+
+    const keepAlive = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 15000);
+
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      unsubscribe();
+      res.end();
+    });
   }
 
   @Post('import-github')
