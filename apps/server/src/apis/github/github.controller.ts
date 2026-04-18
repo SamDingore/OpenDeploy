@@ -1,9 +1,10 @@
 import {
+  BadRequestException,
   Controller,
   Get,
-  InternalServerErrorException,
   Query,
   Res,
+  ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
@@ -15,7 +16,10 @@ import type { ClerkJwtPayload } from '../../auth/clerk-auth.types';
 import { GithubOAuthService, verifyOAuthState } from './github-oauth.service';
 
 function settingsRedirect(query: Record<string, string>): string {
-  const base = (process.env.WEB_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+  const base = (process.env.WEB_APP_URL ?? 'http://localhost:3000').replace(
+    /\/$/,
+    '',
+  );
   const q = new URLSearchParams({ tab: 'connections', ...query });
   return `${base}/settings?${q.toString()}`;
 }
@@ -60,7 +64,10 @@ export class GithubController {
 
     const verified = verifyOAuthState(state, stateSecret);
     if (!verified || !code) {
-      return res.redirect(302, settingsRedirect({ github_error: 'invalid_oauth_state' }));
+      return res.redirect(
+        302,
+        settingsRedirect({ github_error: 'invalid_oauth_state' }),
+      );
     }
 
     try {
@@ -86,7 +93,10 @@ export class GithubController {
 
       return res.redirect(302, settingsRedirect({ github: 'connected' }));
     } catch {
-      return res.redirect(302, settingsRedirect({ github_error: 'connect_failed' }));
+      return res.redirect(
+        302,
+        settingsRedirect({ github_error: 'connect_failed' }),
+      );
     }
   }
 
@@ -105,5 +115,90 @@ export class GithubController {
       return { connected: false as const };
     }
     return { connected: true as const, githubLogin: row.githubLogin };
+  }
+
+  @Get('accounts')
+  @UseGuards(ClerkAuthGuard)
+  async accounts(@CurrentClerkAuth() auth: ClerkJwtPayload | undefined) {
+    const sub = auth?.sub;
+    if (!sub) {
+      throw new UnauthorizedException('Missing Clerk subject');
+    }
+    const conn = await this.prisma.githubConnection.findUnique({
+      where: { clerkUserId: sub },
+      select: { accessToken: true, githubLogin: true },
+    });
+    if (!conn) {
+      throw new BadRequestException('GitHub is not connected');
+    }
+
+    try {
+      const [user, orgs] = await Promise.all([
+        this.oauth.fetchGithubProfile(conn.accessToken),
+        this.oauth.fetchGithubOrgs(conn.accessToken),
+      ]);
+
+      return {
+        accounts: [
+          {
+            id: `user:${user.login}`,
+            login: user.login,
+            type: 'personal' as const,
+          },
+          ...orgs.map((org) => ({
+            id: `org:${org.login}`,
+            login: org.login,
+            type: 'organization' as const,
+          })),
+        ],
+      };
+    } catch {
+      throw new ServiceUnavailableException('Unable to load GitHub accounts');
+    }
+  }
+
+  @Get('repos')
+  @UseGuards(ClerkAuthGuard)
+  async repos(
+    @CurrentClerkAuth() auth: ClerkJwtPayload | undefined,
+    @Query('owner') ownerLogin: string | undefined,
+  ) {
+    const sub = auth?.sub;
+    if (!sub) {
+      throw new UnauthorizedException('Missing Clerk subject');
+    }
+    const owner = ownerLogin?.trim();
+    if (!owner) {
+      throw new BadRequestException('Missing owner query param');
+    }
+    const conn = await this.prisma.githubConnection.findUnique({
+      where: { clerkUserId: sub },
+      select: { accessToken: true, githubLogin: true },
+    });
+    if (!conn) {
+      throw new BadRequestException('GitHub is not connected');
+    }
+
+    try {
+      const repos =
+        conn.githubLogin === owner
+          ? await this.oauth.fetchUserRepos(conn.accessToken)
+          : await this.oauth.fetchOrganizationRepos(conn.accessToken, owner);
+
+      return {
+        repos: repos.map((repo) => ({
+          id: String(repo.id),
+          name: repo.name,
+          fullName: repo.full_name,
+          ownerLogin: repo.owner.login,
+          defaultBranch: repo.default_branch,
+          isPrivate: repo.private,
+          htmlUrl: repo.html_url,
+          updatedAt: repo.updated_at,
+        })),
+      };
+    } catch {
+      throw new ServiceUnavailableException('Unable to load repositories');
+    }
   }
 }

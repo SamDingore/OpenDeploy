@@ -3,7 +3,6 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 
 const GITHUB_AUTHORIZE = 'https://github.com/login/oauth/authorize';
 const GITHUB_ACCESS_TOKEN = 'https://github.com/login/oauth/access_token';
-const GITHUB_API_USER = 'https://api.github.com/user';
 
 const OAUTH_SCOPES = [
   'read:user',
@@ -65,6 +64,22 @@ export function verifyOAuthState(
 
 @Injectable()
 export class GithubOAuthService {
+  private async githubGet<T>(accessToken: string, path: string): Promise<T> {
+    const res = await fetch(`https://api.github.com${path}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${accessToken}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) {
+      throw new InternalServerErrorException(
+        `github_request_failed:${res.status}`,
+      );
+    }
+    return (await res.json()) as T;
+  }
+
   getAuthorizeUrl(clerkUserId: string): string {
     const clientId = requireEnv('GITHUB_OAUTH_CLIENT_ID');
     const stateSecret = requireEnv('GITHUB_OAUTH_STATE_SECRET');
@@ -80,7 +95,9 @@ export class GithubOAuthService {
     return `${GITHUB_AUTHORIZE}?${params.toString()}`;
   }
 
-  async exchangeCode(code: string): Promise<{ accessToken: string; scope: string | null }> {
+  async exchangeCode(
+    code: string,
+  ): Promise<{ accessToken: string; scope: string | null }> {
     const clientId = requireEnv('GITHUB_OAUTH_CLIENT_ID');
     const clientSecret = requireEnv('GITHUB_OAUTH_CLIENT_SECRET');
     const redirectUri = requireEnv('GITHUB_OAUTH_CALLBACK_URL');
@@ -107,7 +124,8 @@ export class GithubOAuthService {
     };
 
     if (!res.ok || !body.access_token) {
-      const msg = body.error_description ?? body.error ?? 'token_exchange_failed';
+      const msg =
+        body.error_description ?? body.error ?? 'token_exchange_failed';
       throw new InternalServerErrorException(msg);
     }
 
@@ -117,21 +135,70 @@ export class GithubOAuthService {
     };
   }
 
-  async fetchGithubProfile(accessToken: string): Promise<{ id: number; login: string }> {
-    const res = await fetch(GITHUB_API_USER, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${accessToken}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    if (!res.ok) {
-      throw new InternalServerErrorException('github_user_fetch_failed');
-    }
-    const data = (await res.json()) as { id?: number; login?: string };
+  async fetchGithubProfile(
+    accessToken: string,
+  ): Promise<{ id: number; login: string }> {
+    const data = await this.githubGet<{ id?: number; login?: string }>(
+      accessToken,
+      '/user',
+    );
     if (typeof data.id !== 'number' || typeof data.login !== 'string') {
       throw new InternalServerErrorException('github_user_invalid');
     }
     return { id: data.id, login: data.login };
+  }
+
+  async fetchGithubOrgs(
+    accessToken: string,
+  ): Promise<Array<{ id: number; login: string }>> {
+    const orgs = await this.githubGet<Array<{ id?: number; login?: string }>>(
+      accessToken,
+      '/user/orgs',
+    );
+    return orgs
+      .filter((org): org is { id: number; login: string } => {
+        return typeof org.id === 'number' && typeof org.login === 'string';
+      })
+      .sort((a, b) => a.login.localeCompare(b.login));
+  }
+
+  async fetchUserRepos(accessToken: string): Promise<
+    Array<{
+      id: number;
+      name: string;
+      full_name: string;
+      private: boolean;
+      html_url: string;
+      default_branch: string;
+      updated_at: string;
+      owner: { login: string };
+    }>
+  > {
+    return this.githubGet(
+      accessToken,
+      '/user/repos?sort=updated&per_page=100&type=owner',
+    );
+  }
+
+  async fetchOrganizationRepos(
+    accessToken: string,
+    orgLogin: string,
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      full_name: string;
+      private: boolean;
+      html_url: string;
+      default_branch: string;
+      updated_at: string;
+      owner: { login: string };
+    }>
+  > {
+    const encodedOrg = encodeURIComponent(orgLogin);
+    return this.githubGet(
+      accessToken,
+      `/orgs/${encodedOrg}/repos?sort=updated&per_page=100&type=all`,
+    );
   }
 }

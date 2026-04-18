@@ -36,7 +36,9 @@ export class ClerkAuthGuard implements CanActivate {
     const token = extractBearerToken(request.headers.authorization);
 
     if (!token) {
-      throw new UnauthorizedException('Missing or invalid Authorization header');
+      throw new UnauthorizedException(
+        'Missing or invalid Authorization header',
+      );
     }
 
     const secretKey = process.env.CLERK_SECRET_KEY?.trim();

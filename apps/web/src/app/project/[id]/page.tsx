@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ExternalLink, GitBranch, Activity, Clock, Cpu, RotateCcw, ArrowUpCircle, HardDrive, RefreshCw, Server, Globe, Terminal, Plus } from "lucide-react";
 
@@ -17,6 +18,20 @@ type Deployment = {
   deployedBy: string;
 };
 
+type ProjectDetails = {
+  id: string;
+  name: string;
+  framework: string;
+  domain: string | null;
+  repository: {
+    fullName: string;
+    htmlUrl: string;
+  };
+};
+
+const apiBase = () =>
+  (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+
 const MOCK_DEPLOYMENTS: Deployment[] = [
   { id: "dep_abc123", status: "building", buildTime: "-", sourceBranch: "feat/auth", lastCommit: "fix: auth flow issue", timeAgo: "Just now", deployedBy: "Sam Dingore" },
   { id: "dep_def456", status: "ready", buildTime: "1m 12s", sourceBranch: "main", lastCommit: "feat: add new dashboard", timeAgo: "2 hours ago", deployedBy: "Sam Dingore" },
@@ -28,9 +43,46 @@ const MOCK_DEPLOYMENTS: Deployment[] = [
 export default function ProjectPage() {
   const router = useRouter();
   const params = useParams();
+  const { isSignedIn, getToken } = useAuth();
   const projectId = params.id as string;
+  const [project, setProject] = useState<ProjectDetails | null>(null);
+  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState<"overview" | "deployments" | "domains" | "logs">("overview");
+
+  useEffect(() => {
+    const loadProject = async () => {
+      if (!isSignedIn) {
+        setProject(null);
+        setProjectError("Sign in to view this project.");
+        return;
+      }
+      setProjectLoading(true);
+      setProjectError(null);
+      try {
+        const token = await getToken();
+        if (!token) {
+          setProjectError("Session expired. Sign in again.");
+          return;
+        }
+        const res = await fetch(`${apiBase()}/apis/projects/${projectId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(body || `Could not load project (${res.status}).`);
+        }
+        const data = (await res.json()) as { project: ProjectDetails };
+        setProject(data.project);
+      } catch (error) {
+        setProjectError(error instanceof Error ? error.message : "Could not load project.");
+      } finally {
+        setProjectLoading(false);
+      }
+    };
+    void loadProject();
+  }, [getToken, isSignedIn, projectId]);
 
   const getStatusColor = (status: Status) => {
     switch (status) {
@@ -76,7 +128,9 @@ export default function ProjectPage() {
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-semibold tracking-tight">awesome-project</h1>
+                <h1 className="text-3xl font-semibold tracking-tight">
+                  {projectLoading ? "Loading project..." : (project?.name ?? "Project")}
+                </h1>
                 <div className="flex items-center gap-2 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
                   <div className={`w-2 h-2 rounded-full ${getStatusColor("building")}`} />
                   <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Building</span>
@@ -84,20 +138,25 @@ export default function ProjectPage() {
               </div>
               <p className="text-zinc-500 dark:text-zinc-400 mt-2 flex items-center gap-2">
                 <GitBranch className="w-4 h-4" />
-                samdingore/awesome-project
+                {project?.repository.fullName ?? "Repository unavailable"}
               </p>
+              {projectError && (
+                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                  {projectError}
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3">
               <a 
-                href="#"
+                href={project?.repository.htmlUrl ?? "#"}
                 className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 px-4 py-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors font-medium text-sm shadow-sm"
               >
                 <GitBranch className="w-4 h-4" />
                 Repository
               </a>
               <a 
-                href="#"
+                href={project?.domain ? `https://${project.domain}` : "#"}
                 className="flex items-center gap-2 bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors font-medium text-sm shadow-sm"
               >
                 <ExternalLink className="w-4 h-4" />

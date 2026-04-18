@@ -1,18 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, GitBranch, Folder, Server, Building2, User, ChevronRight, Search } from "lucide-react";
 
-type Account = {
+type GithubAccount = {
   id: string;
-  name: string;
+  login: string;
   type: "personal" | "organization";
 };
 
-type Repo = {
+type GithubRepo = {
   id: string;
   name: string;
+  fullName: string;
+  ownerLogin: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  htmlUrl: string;
   updatedAt: string;
 };
 
@@ -20,86 +26,213 @@ type Project = {
   id: string;
   name: string;
   framework: string;
-  domain: string;
+  domain: string | null;
 };
 
-const MOCK_ACCOUNTS: Account[] = [
-  { id: "1", name: "samdingore", type: "personal" },
-  { id: "acme-corp", name: "Acme Corp", type: "organization" },
-  { id: "glambrandi", name: "Glambrandi", type: "organization" },
-];
+const apiBase = () =>
+  (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
-const MOCK_REPOS: Record<string, Repo[]> = {
-  "1": [
-    { id: "r1", name: "nextjs-portfolio", updatedAt: "2d ago" },
-    { id: "r2", name: "react-todo-app", updatedAt: "5d ago" },
-    { id: "r5", name: "personal-blog", updatedAt: "1w ago" },
-  ],
-  "acme-corp": [
-    { id: "r3", name: "acme-landing-page", updatedAt: "1w ago" },
-    { id: "r4", name: "acme-api-service", updatedAt: "2w ago" },
-  ],
-  "glambrandi": [
-    { id: "r6", name: "glambrandi-store", updatedAt: "12h ago" },
-    { id: "r7", name: "glambrandi-admin", updatedAt: "2d ago" },
-  ],
+const relativeTime = (iso: string): string => {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 };
-
-const INITIAL_PROJECTS: Project[] = [
-  { id: "p1", name: "OpenDeploy", framework: "Next.js", domain: "opendeploy.vercel.app" },
-  { id: "p2", name: "glambrandi-frontend", framework: "Vite", domain: "glambrandi.com" },
-];
 
 export default function Home() {
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  
+  const { isSignedIn, getToken } = useAuth();
+  const router = useRouter();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+
   // Dialog State
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [step, setStep] = useState<"account" | "repo">("account");
-  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-  const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
+  const [accounts, setAccounts] = useState<GithubAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [repos, setRepos] = useState<GithubRepo[]>([]);
+  const [reposLoading, setReposLoading] = useState(false);
+  const [reposError, setReposError] = useState<string | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<GithubAccount | null>(null);
+  const [selectedRepo, setSelectedRepo] = useState<GithubRepo | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const router = useRouter();
+
+  const authedFetch = useCallback(
+    async (path: string, init?: RequestInit): Promise<Response> => {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("No session token found. Please sign in again.");
+      }
+      return fetch(`${apiBase()}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...(init?.headers ?? {}),
+        },
+      });
+    },
+    [getToken],
+  );
+
+  const loadProjects = useCallback(async () => {
+    if (!isSignedIn) {
+      setProjects([]);
+      setProjectsError(null);
+      return;
+    }
+    setProjectsLoading(true);
+    setProjectsError(null);
+    try {
+      const res = await authedFetch("/apis/projects");
+      if (!res.ok) {
+        throw new Error(`Could not load projects (${res.status})`);
+      }
+      const data = (await res.json()) as { projects: Project[] };
+      setProjects(data.projects);
+    } catch (error) {
+      setProjectsError(error instanceof Error ? error.message : "Could not load projects.");
+      setProjects([]);
+    } finally {
+      setProjectsLoading(false);
+    }
+  }, [authedFetch, isSignedIn]);
+
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true);
+    setAccountsError(null);
+    try {
+      const res = await authedFetch("/apis/github/accounts");
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Failed to load accounts (${res.status}).`);
+      }
+      const data = (await res.json()) as { accounts: GithubAccount[] };
+      setAccounts(data.accounts);
+    } catch (error) {
+      setAccounts([]);
+      setAccountsError(
+        error instanceof Error
+          ? error.message
+          : "Could not load GitHub accounts. Connect GitHub from settings first.",
+      );
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, [authedFetch]);
+
+  const loadReposForAccount = useCallback(
+    async (account: GithubAccount) => {
+      setReposLoading(true);
+      setReposError(null);
+      setRepos([]);
+      try {
+        const res = await authedFetch(`/apis/github/repos?owner=${encodeURIComponent(account.login)}`);
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Failed to load repositories (${res.status}).`);
+        }
+        const data = (await res.json()) as { repos: GithubRepo[] };
+        setRepos(data.repos);
+      } catch (error) {
+        setReposError(error instanceof Error ? error.message : "Could not load repositories.");
+      } finally {
+        setReposLoading(false);
+      }
+    },
+    [authedFetch],
+  );
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadProjects();
+    });
+  }, [loadProjects]);
 
   const openDialog = () => {
+    if (!isSignedIn) {
+      return;
+    }
     setIsDialogOpen(true);
     setStep("account");
     setSelectedAccount(null);
     setSelectedRepo(null);
+    setRepos([]);
+    setReposError(null);
+    setImportError(null);
     setSearchQuery("");
+    void loadAccounts();
   };
 
   const closeDialog = () => {
+    if (importLoading) {
+      return;
+    }
     setIsDialogOpen(false);
   };
 
-  const handleAccountSelect = (account: Account) => {
+  const handleAccountSelect = (account: GithubAccount) => {
     setSelectedAccount(account);
+    setSelectedRepo(null);
     setStep("repo");
     setSearchQuery("");
+    void loadReposForAccount(account);
   };
 
-  const handleRepoSelect = (repo: Repo) => {
+  const handleRepoSelect = (repo: GithubRepo) => {
     setSelectedRepo(repo);
   };
 
-  const handleImport = () => {
-    if (selectedRepo) {
-      const newProject: Project = {
-        id: `p${Date.now()}`,
-        name: selectedRepo.name,
-        framework: "Next.js",
-        domain: `${selectedRepo.name}.vercel.app`,
-      };
-      setProjects([newProject, ...projects]);
-      closeDialog();
-      router.push(`/project/${newProject.id}`);
+  const handleImport = async () => {
+    if (!selectedRepo) {
+      return;
+    }
+    setImportLoading(true);
+    setImportError(null);
+    try {
+      const res = await authedFetch("/apis/projects/import-github", {
+        method: "POST",
+        body: JSON.stringify({
+          githubRepoId: selectedRepo.id,
+          ownerLogin: selectedRepo.ownerLogin,
+          name: selectedRepo.name,
+          fullName: selectedRepo.fullName,
+          defaultBranch: selectedRepo.defaultBranch,
+          htmlUrl: selectedRepo.htmlUrl,
+          isPrivate: selectedRepo.isPrivate,
+          framework: "Next.js",
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Import failed (${res.status}).`);
+      }
+      const data = (await res.json()) as { project: Project };
+      setProjects((prev) => [data.project, ...prev.filter((p) => p.id !== data.project.id)]);
+      setIsDialogOpen(false);
+      router.push(`/project/${data.project.id}`);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Could not import project.");
+    } finally {
+      setImportLoading(false);
     }
   };
 
-  const filteredRepos = selectedAccount 
-    ? MOCK_REPOS[selectedAccount.id]?.filter(repo => repo.name.toLowerCase().includes(searchQuery.toLowerCase())) || []
-    : [];
+  const filteredRepos = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    return repos.filter((repo) => repo.name.toLowerCase().includes(query));
+  }, [repos, searchQuery]);
 
   return (
     <div className="flex-1 bg-[#FAFAFA] flex flex-col p-8 dark:bg-[#0A0A0A]">
@@ -108,6 +241,7 @@ export default function Home() {
           <h1 className="text-3xl font-semibold text-gray-900 dark:text-zinc-50">Projects</h1>
           <button 
             onClick={openDialog}
+            disabled={!isSignedIn}
             className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors font-medium text-sm dark:bg-white dark:text-black dark:hover:bg-gray-200"
           >
             <Plus className="w-4 h-4" />
@@ -115,7 +249,24 @@ export default function Home() {
           </button>
         </div>
 
+        {!isSignedIn && (
+          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            Sign in first, then connect GitHub in settings to import repositories.
+          </div>
+        )}
+
+        {projectsError && (
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+            {projectsError}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {projectsLoading && (
+            <div className="col-span-full py-12 text-center text-gray-500 border-2 border-dashed border-gray-300 dark:border-zinc-800 rounded-xl">
+              Loading projects...
+            </div>
+          )}
           {projects.map(project => (
             <div 
               key={project.id} 
@@ -128,7 +279,9 @@ export default function Home() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-zinc-50">{project.name}</h3>
-                  <p className="text-sm text-gray-500 dark:text-zinc-500">{project.domain}</p>
+                  <p className="text-sm text-gray-500 dark:text-zinc-500">
+                    {project.domain ?? "Domain is pending"}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-zinc-400 pt-2 border-t border-gray-100 dark:border-zinc-800 mt-4">
@@ -137,7 +290,7 @@ export default function Home() {
               </div>
             </div>
           ))}
-          {projects.length === 0 && (
+          {!projectsLoading && projects.length === 0 && (
             <div className="col-span-full py-12 text-center text-gray-500 border-2 border-dashed border-gray-300 dark:border-zinc-800 rounded-xl">
               No projects found. Create one to get started!
             </div>
@@ -168,8 +321,16 @@ export default function Home() {
               {step === "account" && (
                 <div className="space-y-4">
                   <p className="text-sm text-gray-500 dark:text-zinc-400 mb-6">Select an account or organization to import a repository from.</p>
+                  {accountsError && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                      {accountsError}
+                    </div>
+                  )}
+                  {accountsLoading && (
+                    <p className="text-sm text-gray-500 dark:text-zinc-500">Loading GitHub accounts...</p>
+                  )}
                   <div className="space-y-3">
-                    {MOCK_ACCOUNTS.map(account => (
+                    {accounts.map(account => (
                       <button
                         key={account.id}
                         onClick={() => handleAccountSelect(account)}
@@ -180,13 +341,18 @@ export default function Home() {
                             {account.type === "personal" ? <User className="w-5 h-5"/> : <Building2 className="w-5 h-5"/>}
                           </div>
                           <div>
-                            <div className="font-medium text-gray-900 dark:text-zinc-100">{account.name}</div>
+                            <div className="font-medium text-gray-900 dark:text-zinc-100">{account.login}</div>
                             <div className="text-xs text-gray-500 dark:text-zinc-500 capitalize">{account.type}</div>
                           </div>
                         </div>
                         <ChevronRight className="w-5 h-5 text-gray-300 dark:text-zinc-600 group-hover:text-gray-600 dark:group-hover:text-zinc-400 transition-colors" />
                       </button>
                     ))}
+                    {!accountsLoading && accounts.length === 0 && !accountsError && (
+                      <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-zinc-700 dark:text-zinc-400">
+                        No GitHub accounts available.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -201,7 +367,7 @@ export default function Home() {
                       Accounts
                     </button>
                     <span className="text-gray-300 dark:text-zinc-600">/</span>
-                    <span className="text-gray-900 dark:text-zinc-100 font-medium">{selectedAccount.name}</span>
+                    <span className="text-gray-900 dark:text-zinc-100 font-medium">{selectedAccount.login}</span>
                   </div>
                   
                   <div className="relative">
@@ -216,6 +382,16 @@ export default function Home() {
                   </div>
 
                   <div className="grid gap-3">
+                    {reposError && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                        {reposError}
+                      </div>
+                    )}
+                    {reposLoading && (
+                      <div className="text-center py-8 text-sm text-gray-500 dark:text-zinc-500">
+                        Loading repositories...
+                      </div>
+                    )}
                     {filteredRepos.length > 0 ? (
                       filteredRepos.map(repo => (
                         <button
@@ -231,35 +407,41 @@ export default function Home() {
                             <GitBranch className={`w-6 h-6 ${selectedRepo?.id === repo.id ? 'text-black dark:text-white' : 'text-gray-600 dark:text-zinc-400'}`} />
                             <div>
                               <div className="font-medium text-gray-900 dark:text-zinc-100">{repo.name}</div>
-                              <div className="text-xs text-gray-500 dark:text-zinc-500">{repo.updatedAt}</div>
+                              <div className="text-xs text-gray-500 dark:text-zinc-500">{relativeTime(repo.updatedAt)}</div>
                             </div>
                           </div>
                           <div className={`w-4 h-4 rounded-full border ${selectedRepo?.id === repo.id ? 'border-[5px] border-black dark:border-white' : 'border-gray-300 dark:border-zinc-600'}`}></div>
                         </button>
                       ))
-                    ) : (
+                    ) : (!reposLoading && (
                       <div className="text-center py-8 text-sm text-gray-500 dark:text-zinc-500">
-                        No repositories found matching "{searchQuery}"
+                        No repositories found matching &quot;{searchQuery}&quot;
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
               )}
             </div>
 
             <div className="px-6 py-4 border-t border-gray-200 dark:border-zinc-800 flex justify-end gap-3 bg-gray-50 dark:bg-[#0A0A0A]">
+              {importError && (
+                <div className="mr-auto rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                  {importError}
+                </div>
+              )}
               <button 
                 onClick={closeDialog}
+                disabled={importLoading}
                 className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-zinc-300 dark:hover:text-white bg-white dark:bg-[#111] border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-900 transition-colors"
               >
                 Cancel
               </button>
               <button 
-                onClick={handleImport}
-                disabled={step === "account" || !selectedRepo}
+                onClick={() => void handleImport()}
+                disabled={step === "account" || !selectedRepo || importLoading}
                 className="px-4 py-2 text-sm font-medium text-white bg-black dark:bg-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Import
+                {importLoading ? "Importing..." : "Import"}
               </button>
             </div>
           </div>

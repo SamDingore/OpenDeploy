@@ -30,3 +30,32 @@ model GithubConnection {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+model GithubRepository {
+  id            String    @id @default(cuid())
+  githubRepoId  BigInt    @unique
+  ownerLogin    String
+  name          String
+  fullName      String
+  defaultBranch String?
+  isPrivate     Boolean
+  htmlUrl       String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  projects      Project[]
+}
+
+model Project {
+  id                 String           @id @default(cuid())
+  clerkUserId        String
+  name               String
+  framework          String           @default("Unknown")
+  productionDomain   String?
+  githubRepositoryId String
+  githubRepository   GithubRepository @relation(fields: [githubRepositoryId], references: [id], onDelete: Restrict)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([clerkUserId, githubRepositoryId])
+  @@index([clerkUserId, createdAt(sort: Desc)])
+}
