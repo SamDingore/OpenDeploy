@@ -4,12 +4,12 @@ import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { SettingsSidebar, TabId, tabs } from "@/components/settings/SettingsSidebar";
-import { ProfileTab } from "@/components/settings/ProfileTab";
-import { AppearanceTab } from "@/components/settings/AppearanceTab";
-import { NotificationsTab } from "@/components/settings/NotificationsTab";
-import { PlaceholderTab } from "@/components/settings/PlaceholderTab";
-import { ConnectionsTab } from "@/components/settings/ConnectionsTab";
+import { SettingsSidebar, TabId, tabs } from "./components/SettingsSidebar";
+import { ProfileTab } from "./components/ProfileTab";
+import { AppearanceTab } from "./components/AppearanceTab";
+import { NotificationsTab } from "./components/NotificationsTab";
+import { PlaceholderTab } from "./components/PlaceholderTab";
+import { ConnectionsTab } from "./components/ConnectionsTab";
 
 const TAB_IDS = new Set<TabId>(tabs.map((t) => t.id));
 
