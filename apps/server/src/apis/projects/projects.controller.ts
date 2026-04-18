@@ -44,6 +44,21 @@ type ImportGithubProjectBody = {
   framework?: string;
 };
 
+type DeploymentEnvInput = {
+  key?: string;
+  value?: string;
+};
+
+type CreateDeploymentBody = {
+  projectName?: string;
+  frameworkPreset?: string;
+  rootDirectory?: string;
+  buildCommand?: string;
+  outputDirectory?: string;
+  installCommand?: string;
+  envVars?: DeploymentEnvInput[];
+};
+
 function requireClerkUserId(auth: ClerkJwtPayload | undefined): string {
   const sub = auth?.sub;
   if (!sub) {
@@ -56,6 +71,28 @@ function requireClerkUserId(auth: ClerkJwtPayload | undefined): string {
 @UseGuards(ClerkAuthGuard)
 export class ProjectsController {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async requireProject(projectId: string, clerkUserId: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, clerkUserId },
+      include: {
+        githubRepository: {
+          select: {
+            ownerLogin: true,
+            name: true,
+            fullName: true,
+            defaultBranch: true,
+            htmlUrl: true,
+            isPrivate: true,
+          },
+        },
+      },
+    });
+    if (!project) {
+      throw new BadRequestException('Project not found');
+    }
+    return project;
+  }
 
   @Get()
   async list(@CurrentClerkAuth() auth: ClerkJwtPayload | undefined) {
@@ -102,10 +139,7 @@ export class ProjectsController {
   ) {
     const clerkUserId = requireClerkUserId(auth);
     const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId,
-        clerkUserId,
-      },
+      where: { id: projectId, clerkUserId },
       include: {
         githubRepository: {
           select: {
@@ -143,6 +177,115 @@ export class ProjectsController {
           buildDurationMs: d.buildDurationMs,
           createdAt: d.createdAt.toISOString(),
           updatedAt: d.updatedAt.toISOString(),
+        })),
+      },
+    };
+  }
+
+  @Post(':id/deployments')
+  async createDeployment(
+    @CurrentClerkAuth() auth: ClerkJwtPayload | undefined,
+    @Param('id') projectId: string,
+    @Body() body: CreateDeploymentBody,
+  ) {
+    const clerkUserId = requireClerkUserId(auth);
+    const project = await this.requireProject(projectId, clerkUserId);
+
+    const projectName = body.projectName?.trim() || project.name;
+    const frameworkPreset = body.frameworkPreset?.trim() || project.framework || 'Unknown';
+    const rootDirectory = body.rootDirectory?.trim() || './';
+    const buildCommand = body.buildCommand?.trim() || null;
+    const outputDirectory = body.outputDirectory?.trim() || null;
+    const installCommand = body.installCommand?.trim() || null;
+    const sourceBranch = project.githubRepository.defaultBranch?.trim() || null;
+    const sanitizedEnvVars = (body.envVars ?? [])
+      .map((entry) => ({
+        key: entry.key?.trim() ?? '',
+        value: entry.value?.trim() ?? '',
+      }))
+      .filter((entry) => entry.key.length > 0);
+
+    const deployment = await this.prisma.deployment.create({
+      data: {
+        projectId: project.id,
+        status: 'QUEUED',
+        sourceBranch,
+        deployedBy: clerkUserId,
+        config: {
+          create: {
+            projectName,
+            frameworkPreset,
+            rootDirectory,
+            buildCommand,
+            outputDirectory,
+            installCommand,
+          },
+        },
+        environmentVars: {
+          create: sanitizedEnvVars,
+        },
+      },
+    });
+
+    return {
+      deployment: {
+        id: deployment.id,
+        status: deploymentStatusToApi(deployment.status),
+        projectId: deployment.projectId,
+      },
+    };
+  }
+
+  @Get(':id/deployments/:deploymentId')
+  async getDeployment(
+    @CurrentClerkAuth() auth: ClerkJwtPayload | undefined,
+    @Param('id') projectId: string,
+    @Param('deploymentId') deploymentId: string,
+  ) {
+    const clerkUserId = requireClerkUserId(auth);
+    await this.requireProject(projectId, clerkUserId);
+
+    const deployment = await this.prisma.deployment.findFirst({
+      where: {
+        id: deploymentId,
+        projectId,
+      },
+      include: {
+        config: true,
+        environmentVars: {
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!deployment) {
+      throw new BadRequestException('Deployment not found');
+    }
+
+    return {
+      deployment: {
+        id: deployment.id,
+        projectId: deployment.projectId,
+        status: deploymentStatusToApi(deployment.status),
+        sourceBranch: deployment.sourceBranch,
+        commitSha: deployment.commitSha,
+        commitMessage: deployment.commitMessage,
+        deployedBy: deployment.deployedBy,
+        buildDurationMs: deployment.buildDurationMs,
+        createdAt: deployment.createdAt.toISOString(),
+        updatedAt: deployment.updatedAt.toISOString(),
+        config: deployment.config
+          ? {
+              projectName: deployment.config.projectName,
+              frameworkPreset: deployment.config.frameworkPreset,
+              rootDirectory: deployment.config.rootDirectory,
+              buildCommand: deployment.config.buildCommand,
+              outputDirectory: deployment.config.outputDirectory,
+              installCommand: deployment.config.installCommand,
+            }
+          : null,
+        environmentVars: deployment.environmentVars.map((entry) => ({
+          key: entry.key,
+          value: entry.value,
         })),
       },
     };

@@ -81,8 +81,38 @@ model Deployment {
   commitMessage   String?
   deployedBy      String?
   buildDurationMs Int?
+  config          DeploymentConfig?
+  environmentVars DeploymentEnvVar[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
   @@index([projectId, createdAt(sort: Desc)])
+}
+
+/// User-provided deployment setup configuration.
+model DeploymentConfig {
+  id              String     @id @default(cuid())
+  deploymentId    String     @unique
+  deployment      Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  projectName     String
+  frameworkPreset String
+  rootDirectory   String     @default("./")
+  buildCommand    String?
+  outputDirectory String?
+  installCommand  String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+/// Environment variables scoped to one deployment setup.
+model DeploymentEnvVar {
+  id           String     @id @default(cuid())
+  deploymentId String
+  deployment   Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  key          String
+  value        String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([deploymentId])
 }

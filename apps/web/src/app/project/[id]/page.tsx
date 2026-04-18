@@ -31,6 +31,15 @@ type ProjectDetails = {
   deployments: Deployment[];
 };
 
+type SetupFields = {
+  projectName: string;
+  frameworkPreset: string;
+  rootDirectory: string;
+  buildCommand: string;
+  outputDirectory: string;
+  installCommand: string;
+};
+
 const apiBase = () =>
   (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
@@ -69,8 +78,18 @@ export default function ProjectPage() {
   const [project, setProject] = useState<ProjectDetails | null>(null);
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [deploymentSubmitting, setDeploymentSubmitting] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState<"overview" | "deployments" | "domains" | "logs">("overview");
+  const [setup, setSetup] = useState<SetupFields>({
+    projectName: "",
+    frameworkPreset: "Other",
+    rootDirectory: "./",
+    buildCommand: "",
+    outputDirectory: "",
+    installCommand: "",
+  });
 
   const [envVars, setEnvVars] = useState([{ key: "", value: "" }]);
   const addEnv = () => setEnvVars([...envVars, { key: "", value: "" }]);
@@ -110,10 +129,16 @@ export default function ProjectPage() {
           throw new Error(body || `Could not load project (${res.status}).`);
         }
         const data = (await res.json()) as { project: ProjectDetails };
-        setProject({
+        const normalizedProject = {
           ...data.project,
           deployments: data.project.deployments ?? [],
-        });
+        };
+        setProject(normalizedProject);
+        setSetup((prev) => ({
+          ...prev,
+          projectName: normalizedProject.name || "",
+          frameworkPreset: normalizedProject.framework || "Other",
+        }));
       } catch (error) {
         setProjectError(error instanceof Error ? error.message : "Could not load project.");
       } finally {
@@ -122,6 +147,49 @@ export default function ProjectPage() {
     };
     void loadProject();
   }, [getToken, isSignedIn, projectId]);
+
+  const submitSetup = async () => {
+    if (!project || deploymentSubmitting) return;
+    setDeployError(null);
+    setDeploymentSubmitting(true);
+    try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Session expired. Sign in again.");
+      }
+
+      const payload = {
+        projectName: setup.projectName.trim() || project.name,
+        frameworkPreset: setup.frameworkPreset.trim() || project.framework || "Other",
+        rootDirectory: setup.rootDirectory.trim() || "./",
+        buildCommand: setup.buildCommand.trim() || null,
+        outputDirectory: setup.outputDirectory.trim() || null,
+        installCommand: setup.installCommand.trim() || null,
+        envVars: envVars
+          .map((entry) => ({ key: entry.key.trim(), value: entry.value }))
+          .filter((entry) => entry.key.length > 0),
+      };
+
+      const res = await fetch(`${apiBase()}/apis/projects/${project.id}/deployments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(body || `Could not create deployment (${res.status}).`);
+      }
+      const data = (await res.json()) as { deployment: { id: string } };
+      router.push(`/project/${project.id}/deployments/${data.deployment.id}`);
+    } catch (error) {
+      setDeployError(error instanceof Error ? error.message : "Could not create deployment.");
+    } finally {
+      setDeploymentSubmitting(false);
+    }
+  };
 
   const getStatusColor = (status: Status) => {
     switch (status) {
@@ -296,7 +364,8 @@ export default function ProjectPage() {
                     <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-2">Project Name</label>
                     <input 
                       type="text" 
-                      defaultValue={project.name}
+                      value={setup.projectName}
+                      onChange={(e) => setSetup((prev) => ({ ...prev, projectName: e.target.value }))}
                       className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
                     />
                   </div>
@@ -307,7 +376,8 @@ export default function ProjectPage() {
                       <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-2">Framework Preset</label>
                       <div className="relative">
                         <select 
-                          defaultValue={project.framework || "Other"}
+                          value={setup.frameworkPreset}
+                          onChange={(e) => setSetup((prev) => ({ ...prev, frameworkPreset: e.target.value }))}
                           className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
                         >
                           <option value="Next.js">Next.js</option>
@@ -329,7 +399,8 @@ export default function ProjectPage() {
                         </span>
                         <input 
                           type="text" 
-                          defaultValue="./"
+                          value={setup.rootDirectory}
+                          onChange={(e) => setSetup((prev) => ({ ...prev, rootDirectory: e.target.value }))}
                           className="flex-1 bg-white dark:bg-zinc-950 px-4 py-2.5 text-sm focus:outline-none min-w-0"
                         />
                       </div>
@@ -352,6 +423,8 @@ export default function ProjectPage() {
                         </label>
                         <input 
                           type="text" 
+                          value={setup.buildCommand}
+                          onChange={(e) => setSetup((prev) => ({ ...prev, buildCommand: e.target.value }))}
                           placeholder="npm run odeploy-build"
                           className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
                         />
@@ -363,6 +436,8 @@ export default function ProjectPage() {
                         </label>
                         <input 
                           type="text" 
+                          value={setup.outputDirectory}
+                          onChange={(e) => setSetup((prev) => ({ ...prev, outputDirectory: e.target.value }))}
                           placeholder="."
                           className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
                         />
@@ -374,6 +449,8 @@ export default function ProjectPage() {
                         </label>
                         <input 
                           type="text" 
+                          value={setup.installCommand}
+                          onChange={(e) => setSetup((prev) => ({ ...prev, installCommand: e.target.value }))}
                           placeholder="npm install"
                           className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
                         />
@@ -433,11 +510,21 @@ export default function ProjectPage() {
                 </div>
               </div>
               <div className="px-6 py-4 md:px-8 md:py-5 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-[#111] flex justify-end">
-                <button className="flex items-center gap-2 bg-black dark:bg-white text-white dark:text-black px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity font-medium shadow-sm w-full sm:w-auto justify-center">
-                  Deploy
+                <button
+                  type="button"
+                  onClick={submitSetup}
+                  disabled={deploymentSubmitting}
+                  className="flex items-center gap-2 bg-black disabled:opacity-60 dark:bg-white text-white dark:text-black px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity font-medium shadow-sm w-full sm:w-auto justify-center"
+                >
+                  {deploymentSubmitting ? "Creating..." : "Deploy"}
                   <Play className="w-4 h-4 fill-current ml-1" />
                 </button>
               </div>
+              {deployError && (
+                <div className="px-6 pb-5 text-sm text-red-600 dark:text-red-400">
+                  {deployError}
+                </div>
+              )}
             </div>
           </div>
         )}
