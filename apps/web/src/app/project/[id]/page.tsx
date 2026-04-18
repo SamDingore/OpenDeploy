@@ -3,7 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, GitBranch, Activity, Clock, Cpu, RotateCcw, ArrowUpCircle, HardDrive, RefreshCw, Server, Globe, Terminal, Plus } from "lucide-react";
+import { ArrowLeft, ExternalLink, GitBranch, Activity, Clock, Cpu, RotateCcw, ArrowUpCircle, HardDrive, RefreshCw, Server, Globe, Terminal, Plus, Settings, ChevronDown, Trash2, Play, Upload, Folder } from "lucide-react";
 
 type Status = "ready" | "error" | "building" | "queued" | "initializing" | "cancelled";
 
@@ -71,6 +71,21 @@ export default function ProjectPage() {
   const [projectError, setProjectError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState<"overview" | "deployments" | "domains" | "logs">("overview");
+
+  const [envVars, setEnvVars] = useState([{ key: "", value: "" }]);
+  const addEnv = () => setEnvVars([...envVars, { key: "", value: "" }]);
+  const removeEnv = (index: number) => {
+    if (envVars.length === 1) {
+      setEnvVars([{ key: "", value: "" }]);
+      return;
+    }
+    setEnvVars(envVars.filter((_, i) => i !== index));
+  };
+  const updateEnv = (index: number, field: "key" | "value", val: string) => {
+    const newVars = [...envVars];
+    newVars[index][field] = val;
+    setEnvVars(newVars);
+  };
 
   useEffect(() => {
     const loadProject = async () => {
@@ -265,8 +280,165 @@ export default function ProjectPage() {
           </div>
         )}
         {activeTab === "overview" && !projectLoading && project && !hasDeployments && (
-          <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/40 px-6 py-16 text-center text-lg font-medium text-zinc-800 dark:text-zinc-100">
-            Setup
+          <div className="max-w-4xl mx-auto mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left w-full">
+            <div className="bg-white dark:bg-[#111] rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-[#111]">
+                <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Configure Deployment</h2>
+                <p className="text-sm text-zinc-500 mt-1">Review and configure your build and deployment settings.</p>
+              </div>
+              
+              <div className="p-6 md:p-8 space-y-8">
+                {/* Settings Grid */}
+                <div className="grid gap-8">
+                  
+                  {/* Project Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-2">Project Name</label>
+                    <input 
+                      type="text" 
+                      defaultValue={project.name}
+                      className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
+                    />
+                  </div>
+
+                  {/* Framework Preset & Root Directory */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-2">Framework Preset</label>
+                      <div className="relative">
+                        <select 
+                          defaultValue={project.framework || "Other"}
+                          className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
+                        >
+                          <option value="Next.js">Next.js</option>
+                          <option value="NestJS">NestJS</option>
+                          <option value="React">React</option>
+                          <option value="Vue">Vue</option>
+                          <option value="Other">Other</option>
+                        </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-2">Root Directory</label>
+                      <div className="flex rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 focus-within:ring-2 focus-within:ring-black dark:focus-within:ring-white transition-shadow h-[42px]">
+                        <span className="bg-zinc-50 dark:bg-zinc-900/50 px-4 flex items-center border-r border-zinc-200 dark:border-zinc-800 text-zinc-500 text-sm">
+                          <Folder className="w-4 h-4 mr-2"/>
+                          Root
+                        </span>
+                        <input 
+                          type="text" 
+                          defaultValue="./"
+                          className="flex-1 bg-white dark:bg-zinc-950 px-4 py-2.5 text-sm focus:outline-none min-w-0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Build and Output Settings */}
+                  <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+                    <div className="px-5 py-4 bg-zinc-50/50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-medium text-sm text-zinc-900 dark:text-zinc-100">
+                        <Settings className="w-4 h-4" />
+                        Build and Output Settings
+                      </div>
+                    </div>
+                    <div className="p-5 space-y-5 bg-white dark:bg-zinc-950/20">
+                      <div>
+                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5 flex justify-between pr-1">
+                          Build Command
+                          <span className="text-zinc-400 font-normal text-xs">Override default</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          placeholder="npm run odeploy-build"
+                          className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5 flex justify-between pr-1">
+                          Output Directory
+                          <span className="text-zinc-400 font-normal text-xs">Override default</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          placeholder="."
+                          className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5 flex justify-between pr-1">
+                          Install Command
+                          <span className="text-zinc-400 font-normal text-xs">Override default</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          placeholder="npm install"
+                          className="w-full bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Environment Variables */}
+                  <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
+                      <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">Environment Variables</label>
+                      <button className="text-xs items-center justify-center gap-1.5 font-medium border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 flex rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-900 transition shadow-sm">
+                        <Upload className="w-3 h-3" />
+                        Upload .env
+                      </button>
+                    </div>
+                    
+                    <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-950/20">
+                      {envVars.map((env, i) => (
+                        <div key={i} className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-3 border-b border-zinc-100 dark:border-zinc-800/50 last:border-0">
+                          <input 
+                            type="text"
+                            placeholder="KEY"
+                            value={env.key}
+                            onChange={(e) => updateEnv(i, 'key', e.target.value)}
+                            className="w-full sm:flex-1 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
+                          />
+                          <div className="flex w-full sm:flex-1 gap-2 items-center">
+                            <input 
+                              type="text"
+                              placeholder="VALUE"
+                              value={env.value}
+                              onChange={(e) => updateEnv(i, 'value', e.target.value)}
+                              className="flex-1 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-shadow"
+                            />
+                            <button 
+                              onClick={() => removeEnv(i)}
+                              className="shrink-0 p-2 text-zinc-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 border border-transparent hover:border-red-100 dark:hover:border-red-900/30"
+                              title="Remove variable"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <button 
+                      onClick={addEnv}
+                      className="mt-3 text-sm flex items-center gap-1.5 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Environment Variable
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+              <div className="px-6 py-4 md:px-8 md:py-5 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-[#111] flex justify-end">
+                <button className="flex items-center gap-2 bg-black dark:bg-white text-white dark:text-black px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity font-medium shadow-sm w-full sm:w-auto justify-center">
+                  Deploy
+                  <Play className="w-4 h-4 fill-current ml-1" />
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {activeTab === "overview" && !projectLoading && project && hasDeployments && latest && (
