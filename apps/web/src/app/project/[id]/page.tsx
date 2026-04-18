@@ -5,17 +5,18 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ExternalLink, GitBranch, Activity, Clock, Cpu, RotateCcw, ArrowUpCircle, HardDrive, RefreshCw, Server, Globe, Terminal, Plus } from "lucide-react";
 
-// Mock data structures
 type Status = "ready" | "error" | "building" | "queued" | "initializing" | "cancelled";
 
 type Deployment = {
   id: string;
   status: Status;
-  buildTime: string;
-  sourceBranch: string;
-  lastCommit: string;
-  timeAgo: string;
-  deployedBy: string;
+  sourceBranch: string | null;
+  commitSha: string | null;
+  commitMessage: string | null;
+  deployedBy: string | null;
+  buildDurationMs: number | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type ProjectDetails = {
@@ -27,18 +28,38 @@ type ProjectDetails = {
     fullName: string;
     htmlUrl: string;
   };
+  deployments: Deployment[];
 };
 
 const apiBase = () =>
   (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
-const MOCK_DEPLOYMENTS: Deployment[] = [
-  { id: "dep_abc123", status: "building", buildTime: "-", sourceBranch: "feat/auth", lastCommit: "fix: auth flow issue", timeAgo: "Just now", deployedBy: "Sam Dingore" },
-  { id: "dep_def456", status: "ready", buildTime: "1m 12s", sourceBranch: "main", lastCommit: "feat: add new dashboard", timeAgo: "2 hours ago", deployedBy: "Sam Dingore" },
-  { id: "dep_ghi789", status: "error", buildTime: "45s", sourceBranch: "main", lastCommit: "Merge pull request #12", timeAgo: "1 day ago", deployedBy: "Acme CI" },
-  { id: "dep_jkl012", status: "cancelled", buildTime: "12s", sourceBranch: "fix/typo", lastCommit: "fix: typo in header", timeAgo: "2 days ago", deployedBy: "Sam Dingore" },
-  { id: "dep_pqr345", status: "ready", buildTime: "1m 05s", sourceBranch: "main", lastCommit: "Initial commit", timeAgo: "3 days ago", deployedBy: "Sam Dingore" },
-];
+function formatBuildDuration(ms: number | null): string {
+  if (ms == null || ms < 0) return "—";
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
+}
+
+function formatTimeAgo(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (diffSec < 60) return "Just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? "" : "s"} ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
+}
+
+function shortCommitRef(sha: string | null): string {
+  if (!sha) return "—";
+  return sha.length > 7 ? sha.slice(0, 7) : sha;
+}
 
 export default function ProjectPage() {
   const router = useRouter();
@@ -74,7 +95,10 @@ export default function ProjectPage() {
           throw new Error(body || `Could not load project (${res.status}).`);
         }
         const data = (await res.json()) as { project: ProjectDetails };
-        setProject(data.project);
+        setProject({
+          ...data.project,
+          deployments: data.project.deployments ?? [],
+        });
       } catch (error) {
         setProjectError(error instanceof Error ? error.message : "Could not load project.");
       } finally {
@@ -112,6 +136,10 @@ export default function ProjectPage() {
     }
   };
 
+  const latest = project?.deployments?.[0];
+  const latestStatus = latest?.status;
+  const hasDeployments = (project?.deployments?.length ?? 0) > 0;
+
   return (
     <div className="flex-1 bg-[#FAFAFA] flex flex-col p-4 md:p-8 dark:bg-[#0A0A0A] min-h-screen font-sans text-zinc-900 dark:text-zinc-50">
       <main className="max-w-6xl mx-auto w-full flex-1">
@@ -131,10 +159,18 @@ export default function ProjectPage() {
                 <h1 className="text-3xl font-semibold tracking-tight">
                   {projectLoading ? "Loading project..." : (project?.name ?? "Project")}
                 </h1>
-                <div className="flex items-center gap-2 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
-                  <div className={`w-2 h-2 rounded-full ${getStatusColor("building")}`} />
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Building</span>
-                </div>
+                {!projectLoading && latestStatus && (
+                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <div className={`w-2 h-2 rounded-full ${getStatusColor(latestStatus)}`} />
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{getStatusLabel(latestStatus)}</span>
+                  </div>
+                )}
+                {!projectLoading && project && !latestStatus && (
+                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <div className="w-2 h-2 rounded-full bg-zinc-400" />
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">No deployments</span>
+                  </div>
+                )}
               </div>
               <p className="text-zinc-500 dark:text-zinc-400 mt-2 flex items-center gap-2">
                 <GitBranch className="w-4 h-4" />
@@ -223,7 +259,17 @@ export default function ProjectPage() {
         </div>
 
         {/* Overview Tab */}
-        {activeTab === "overview" && (
+        {activeTab === "overview" && projectLoading && (
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] px-6 py-12 text-center text-sm text-zinc-500">
+            Loading overview…
+          </div>
+        )}
+        {activeTab === "overview" && !projectLoading && project && !hasDeployments && (
+          <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/40 px-6 py-16 text-center text-lg font-medium text-zinc-800 dark:text-zinc-100">
+            Setup
+          </div>
+        )}
+        {activeTab === "overview" && !projectLoading && project && hasDeployments && latest && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Main Content Column */}
             <div className="lg:col-span-2 space-y-6">
@@ -234,29 +280,37 @@ export default function ProjectPage() {
                     <Activity className="w-4 h-4 text-amber-500" />
                     Current Deployment
                   </h2>
-                  <span className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-900">
-                    Building
+                  <span
+                    className={`text-xs font-medium px-2 py-1 rounded-md border ${getStatusTextColor(latest.status)} border-current/20`}
+                  >
+                    {getStatusLabel(latest.status)}
                   </span>
                 </div>
                 <div className="p-6">
                   <div className="flex flex-col gap-6">
                     <div className="flex flex-col md:flex-row gap-6 md:items-center">
                       <div className="h-24 w-full md:w-40 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-100 dark:bg-zinc-900 flex justify-center items-center">
-                         <Activity className="w-8 h-8 text-zinc-300 dark:text-zinc-700 animate-pulse" />
+                        <Activity
+                          className={`w-8 h-8 text-zinc-300 dark:text-zinc-700 ${latest.status === "building" || latest.status === "initializing" ? "animate-pulse" : ""}`}
+                        />
                       </div>
                       <div className="space-y-2 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">Commit</span>
                           <code className="text-xs font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300">
-                            a1b2c3d
+                            {shortCommitRef(latest.commitSha)}
                           </code>
                         </div>
                         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                          feat: add new dashboard and component library integration
+                          {latest.commitMessage ?? "No commit message"}
                         </p>
                         <div className="flex items-center gap-4 text-xs text-zinc-500 mt-2">
-                          <span className="flex items-center gap-1"><GitBranch className="w-3 h-3" /> feat/auth</span>
-                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Started 2m ago</span>
+                          <span className="flex items-center gap-1">
+                            <GitBranch className="w-3 h-3" /> {latest.sourceBranch ?? "—"}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> {formatTimeAgo(latest.createdAt)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -273,26 +327,27 @@ export default function ProjectPage() {
                   </h2>
                 </div>
                 <div className="p-0">
-                  <div className="flex items-center justify-between p-4 px-6 border-b border-zinc-100 dark:border-zinc-800/50">
-                    <div>
-                      <div className="font-medium flex items-center gap-2 text-sm">
-                        awesome-project.opendeploy.app
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400 px-1.5 py-0.5 rounded">Primary</span>
+                  {project.domain ? (
+                    <div className="flex items-center justify-between p-4 px-6 border-b border-zinc-100 dark:border-zinc-800/50 last:border-0">
+                      <div>
+                        <div className="font-medium flex items-center gap-2 text-sm">
+                          {project.domain}
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400 px-1.5 py-0.5 rounded">
+                            Primary
+                          </span>
+                        </div>
+                        <div className="text-xs text-zinc-500 mt-1">Production domain</div>
                       </div>
-                      <div className="text-xs text-zinc-500 mt-1">Configured securely with TLS</div>
+                      <button
+                        type="button"
+                        className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-sm font-medium"
+                      >
+                        Edit
+                      </button>
                     </div>
-                    <button className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-sm font-medium">Edit</button>
-                  </div>
-                  <div className="flex items-center justify-between p-4 px-6">
-                    <div>
-                      <div className="font-medium flex items-center gap-2 text-sm">
-                        awesome-project-git-main.opendeploy.app
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-blue-600 bg-blue-50 dark:bg-blue-500/10 dark:text-blue-400 px-1.5 py-0.5 rounded">Branch</span>
-                      </div>
-                      <div className="text-xs text-zinc-500 mt-1">Automatically assigns branch aliases</div>
-                    </div>
-                    <button className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 px-3 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-sm font-medium">Edit</button>
-                  </div>
+                  ) : (
+                    <div className="p-6 text-sm text-zinc-500">No production domain configured.</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -318,7 +373,7 @@ export default function ProjectPage() {
                     </div>
                     <p className="text-xs text-zinc-500 mt-1 text-right">4.5M Invocations</p>
                   </div>
-                  
+
                   <div>
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-zinc-600 dark:text-zinc-400">Bandwidth</span>
@@ -337,7 +392,14 @@ export default function ProjectPage() {
                     </div>
                     <div className="flex items-center gap-1 mt-1">
                       {Array.from({ length: 30 }).map((_, i) => (
-                        <div key={i} className="h-6 flex-1 bg-emerald-500 rounded-sm opacity-80" style={{ opacity: i === 28 ? 0.3 : (i === 14 ? 0.2 : 0.8), backgroundColor: i === 28 || i === 14 ? '#eab308' : '#10b981' }}></div>
+                        <div
+                          key={i}
+                          className="h-6 flex-1 bg-emerald-500 rounded-sm opacity-80"
+                          style={{
+                            opacity: i === 28 ? 0.3 : i === 14 ? 0.2 : 0.8,
+                            backgroundColor: i === 28 || i === 14 ? "#eab308" : "#10b981",
+                          }}
+                        ></div>
                       ))}
                     </div>
                     <p className="text-xs text-zinc-500 mt-1 text-right">Last 30 days</p>
@@ -347,26 +409,26 @@ export default function ProjectPage() {
 
               {/* Environment Info */}
               <div className="bg-white dark:bg-[#111] rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6">
-                 <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-                        <HardDrive className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium">Framework</div>
-                        <div className="text-xs text-zinc-500">Next.js 14</div>
-                      </div>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                      <HardDrive className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-                        <Server className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium">Node.js Version</div>
-                        <div className="text-xs text-zinc-500">18.17.0</div>
-                      </div>
+                    <div>
+                      <div className="text-sm font-medium">Framework</div>
+                      <div className="text-xs text-zinc-500">{project.framework}</div>
                     </div>
-                 </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                      <Server className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium">Node.js Version</div>
+                      <div className="text-xs text-zinc-500">18.17.0</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -375,69 +437,86 @@ export default function ProjectPage() {
         {/* Deployments Tab */}
         {activeTab === "deployments" && (
           <div className="bg-white dark:bg-[#111] rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-[#0A0A0A]">
-                    <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Deployment</th>
-                    <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Status</th>
-                    <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Commit</th>
-                    <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Branch</th>
-                    <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Duration</th>
-                    <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Time</th>
-                    <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-                  {MOCK_DEPLOYMENTS.map((deploy) => (
-                    <tr key={deploy.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-zinc-900 dark:text-zinc-100">{deploy.id.split('_')[1]}</span>
-                          {deploy.status === "building" && <RefreshCw className="w-3 h-3 text-amber-500 animate-spin" />}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${getStatusTextColor(deploy.status)} border-current/20`}>
-                          <div className={`w-1.5 h-1.5 rounded-full mr-2 ${getStatusColor(deploy.status).split(' ')[0]}`} />
-                          {getStatusLabel(deploy.status)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-zinc-900 dark:text-zinc-100 font-medium truncate max-w-[180px]" title={deploy.lastCommit}>
-                          {deploy.lastCommit}
-                        </div>
-                        <div className="text-xs text-zinc-500 mt-0.5">by {deploy.deployedBy}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
-                          <GitBranch className="w-3 h-3" />
-                          <span className="font-mono text-xs">{deploy.sourceBranch}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">
-                        {deploy.buildTime}
-                      </td>
-                      <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">
-                        {deploy.timeAgo}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {deploy.status === "ready" && (
-                            <button className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="Promote to Production">
-                              <ArrowUpCircle className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="Redeploy">
-                            <RotateCcw className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+            {projectLoading ? (
+              <div className="px-6 py-12 text-center text-sm text-zinc-500">Loading deployments…</div>
+            ) : !project?.deployments?.length ? (
+              <div className="px-6 py-12 text-center text-sm text-zinc-500">No deployments yet.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-[#0A0A0A]">
+                      <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Deployment</th>
+                      <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Status</th>
+                      <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Commit</th>
+                      <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Branch</th>
+                      <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Duration</th>
+                      <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400">Time</th>
+                      <th className="px-6 py-4 font-medium text-zinc-500 dark:text-zinc-400 text-right">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+                    {project.deployments.map((deploy) => (
+                      <tr key={deploy.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-colors group">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-zinc-900 dark:text-zinc-100">{deploy.id.slice(0, 8)}</span>
+                            {deploy.status === "building" && <RefreshCw className="w-3 h-3 text-amber-500 animate-spin" />}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div
+                            className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${getStatusTextColor(deploy.status)} border-current/20`}
+                          >
+                            <div className={`w-1.5 h-1.5 rounded-full mr-2 ${getStatusColor(deploy.status).split(" ")[0]}`} />
+                            {getStatusLabel(deploy.status)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div
+                            className="text-zinc-900 dark:text-zinc-100 font-medium truncate max-w-[180px]"
+                            title={deploy.commitMessage ?? undefined}
+                          >
+                            {deploy.commitMessage ?? "—"}
+                          </div>
+                          <div className="text-xs text-zinc-500 mt-0.5">
+                            {deploy.deployedBy ? `by ${deploy.deployedBy}` : ""}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
+                            <GitBranch className="w-3 h-3" />
+                            <span className="font-mono text-xs">{deploy.sourceBranch ?? "—"}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">{formatBuildDuration(deploy.buildDurationMs)}</td>
+                        <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">{formatTimeAgo(deploy.createdAt)}</td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {deploy.status === "ready" && (
+                              <button
+                                type="button"
+                                className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                title="Promote to Production"
+                              >
+                                <ArrowUpCircle className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                              title="Redeploy"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

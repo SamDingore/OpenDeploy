@@ -11,7 +11,27 @@ import {
 import { CurrentClerkAuth } from '../../auth/clerk-auth.decorator';
 import { ClerkAuthGuard } from '../../auth/clerk-auth.guard';
 import type { ClerkJwtPayload } from '../../auth/clerk-auth.types';
+import type { DeploymentStatus } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+function deploymentStatusToApi(status: DeploymentStatus): string {
+  switch (status) {
+    case 'READY':
+      return 'ready';
+    case 'ERROR':
+      return 'error';
+    case 'BUILDING':
+      return 'building';
+    case 'QUEUED':
+      return 'queued';
+    case 'INITIALIZING':
+      return 'initializing';
+    case 'CANCELLED':
+      return 'cancelled';
+    default:
+      return 'queued';
+  }
+}
 
 type ImportGithubProjectBody = {
   githubRepoId?: string | number;
@@ -97,6 +117,9 @@ export class ProjectsController {
             isPrivate: true,
           },
         },
+        deployments: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
     if (!project) {
@@ -110,6 +133,17 @@ export class ProjectsController {
         domain: project.productionDomain,
         repository: project.githubRepository,
         createdAt: project.createdAt,
+        deployments: project.deployments.map((d) => ({
+          id: d.id,
+          status: deploymentStatusToApi(d.status),
+          sourceBranch: d.sourceBranch,
+          commitSha: d.commitSha,
+          commitMessage: d.commitMessage,
+          deployedBy: d.deployedBy,
+          buildDurationMs: d.buildDurationMs,
+          createdAt: d.createdAt.toISOString(),
+          updatedAt: d.updatedAt.toISOString(),
+        })),
       },
     };
   }

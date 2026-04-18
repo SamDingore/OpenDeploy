@@ -53,9 +53,36 @@ model Project {
   productionDomain   String?
   githubRepositoryId String
   githubRepository   GithubRepository @relation(fields: [githubRepositoryId], references: [id], onDelete: Restrict)
+  deployments        Deployment[]
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
   @@unique([clerkUserId, githubRepositoryId])
   @@index([clerkUserId, createdAt(sort: Desc)])
+}
+
+/// A deployment record (build/run metadata). Actual deploy execution is not implemented yet.
+enum DeploymentStatus {
+  READY
+  ERROR
+  BUILDING
+  QUEUED
+  INITIALIZING
+  CANCELLED
+}
+
+model Deployment {
+  id              String            @id @default(cuid())
+  projectId       String
+  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status          DeploymentStatus  @default(QUEUED)
+  sourceBranch    String?
+  commitSha       String?
+  commitMessage   String?
+  deployedBy      String?
+  buildDurationMs Int?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([projectId, createdAt(sort: Desc)])
 }
