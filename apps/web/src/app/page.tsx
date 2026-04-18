@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, GitBranch, Folder, Server, Building2, User, ChevronRight, Search } from "lucide-react";
 
 type Account = {
@@ -58,6 +59,7 @@ export default function Home() {
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const router = useRouter();
 
   const openDialog = () => {
     setIsDialogOpen(true);
@@ -91,6 +93,7 @@ export default function Home() {
       };
       setProjects([newProject, ...projects]);
       closeDialog();
+      router.push(`/project/${newProject.id}`);
     }
   };
 
@@ -114,7 +117,11 @@ export default function Home() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map(project => (
-            <div key={project.id} className="bg-white dark:bg-[#111] p-6 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+            <div 
+              key={project.id} 
+              onClick={() => router.push(`/project/${project.id}`)}
+              className="bg-white dark:bg-[#111] p-6 rounded-xl border border-gray-200 dark:border-zinc-800 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+            >
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-gray-100 dark:bg-zinc-900 rounded-full flex items-center justify-center">
                   <Folder className="w-5 h-5 text-gray-600 dark:text-zinc-400" />
