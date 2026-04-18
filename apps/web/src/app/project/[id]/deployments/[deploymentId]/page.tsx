@@ -582,7 +582,7 @@ export default function DeploymentDetailsPage() {
                         <div key={`${entry.key}-${index}`} className="flex flex-col bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
                           <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 mb-1 truncate">{entry.key}</span>
                           <div className="text-xs font-mono text-zinc-500 bg-zinc-200 dark:bg-[#0A0A0A] p-2 rounded truncate select-all border border-zinc-300 dark:border-zinc-800">
-                            {entry.value}
+                            ********
                           </div>
                         </div>
                       ))}
