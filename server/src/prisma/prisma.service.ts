@@ -10,7 +10,9 @@ export class PrismaService
   constructor() {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
-      throw new Error('DATABASE_URL is not set');
+      throw new Error(
+        'DATABASE_URL is not set. Add it to server/.env (see server/.env.example). If you run from dist/, ensure main.ts loads env from the server package root, not dist/.env.',
+      );
     }
     const adapter = new PrismaPg({ connectionString });
     super({ adapter });
