@@ -1,1 +1,0 @@
-export const OPENDEPLOY_ENV = 'OPENDEPLOY_ENV';
