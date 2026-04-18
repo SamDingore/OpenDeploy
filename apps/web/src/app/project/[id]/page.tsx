@@ -716,7 +716,11 @@ export default function ProjectPage() {
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
                     {project.deployments.map((deploy) => (
-                      <tr key={deploy.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-colors group">
+                      <tr 
+                        key={deploy.id} 
+                        onClick={() => router.push(`/project/${projectId}/deployments/${deploy.id}`)}
+                        className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-colors group cursor-pointer"
+                      >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <span className="font-mono text-zinc-900 dark:text-zinc-100">{deploy.id.slice(0, 8)}</span>

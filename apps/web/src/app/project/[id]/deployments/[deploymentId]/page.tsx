@@ -1,7 +1,23 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { ArrowLeft, Clock, GitBranch, LoaderCircle, Settings, TerminalSquare, UserCog } from "lucide-react";
+import { 
+  ArrowLeft, 
+  Clock, 
+  GitBranch, 
+  LoaderCircle, 
+  Settings, 
+  TerminalSquare, 
+  UserCog, 
+  CheckCircle2, 
+  CircleDashed,
+  XCircle,
+  Activity,
+  Server,
+  Box,
+  Hash,
+  Database
+} from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -121,7 +137,15 @@ export default function DeploymentDetailsPage() {
   const [stages, setStages] = useState<Stage[]>([]);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [streamConnected, setStreamConnected] = useState(false);
-  const redirectScheduledRef = useRef(false);
+  
+  const bottomLogsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Attempt auto-scroll
+    if (bottomLogsRef.current) {
+      bottomLogsRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs]);
 
   useEffect(() => {
     const load = async () => {
@@ -204,7 +228,7 @@ export default function DeploymentDetailsPage() {
         return;
       }
       if (event.type === "log") {
-        setLogs((prev) => [...prev, event.line].slice(-250));
+        setLogs((prev) => [...prev, event.line].slice(-500));
       }
     };
 
@@ -272,218 +296,303 @@ export default function DeploymentDetailsPage() {
     [stages],
   );
 
-  useEffect(() => {
-    if (
-      !deployment ||
-      deployment.status !== "ready" ||
-      redirectScheduledRef.current
-    ) {
-      return;
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "ready": return "text-emerald-500 bg-emerald-500/10";
+      case "error": return "text-rose-500 bg-rose-500/10";
+      case "building": return "text-amber-500 bg-amber-500/10 border-amber-500/50 animate-pulse";
+      case "queued": return "text-zinc-500 bg-zinc-500/10";
+      case "initializing": return "text-blue-500 bg-blue-500/10 animate-pulse";
+      case "cancelled": return "text-zinc-500 bg-zinc-500/10";
+      default: return "text-zinc-500 bg-zinc-500/10";
     }
-    redirectScheduledRef.current = true;
-    const timeoutId = setTimeout(() => {
-      router.push(`/project/${projectId}`);
-    }, 1200);
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [deployment, projectId, router]);
+  };
+
+  const getStageIcon = (status: string) => {
+    switch (status) {
+      case "completed": return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
+      case "running": return <LoaderCircle className="w-5 h-5 text-blue-500 animate-spin" />;
+      case "error": return <XCircle className="w-5 h-5 text-rose-500" />;
+      default: return <CircleDashed className="w-5 h-5 text-zinc-400 dark:text-zinc-600" />;
+    }
+  };
 
   return (
-    <div className="flex-1 bg-[#FAFAFA] dark:bg-[#0A0A0A] min-h-screen p-4 md:p-8">
-      <main className="max-w-4xl mx-auto">
+    <div className="flex-1 bg-[#FAFAFA] dark:bg-[#0A0A0A] min-h-screen text-zinc-900 dark:text-zinc-50 p-4 md:p-8 font-sans selection:bg-zinc-200 dark:selection:bg-zinc-800">
+      <main className="max-w-6xl mx-auto space-y-6">
         <button
           type="button"
           onClick={() => router.push(`/project/${projectId}`)}
-          className="mb-6 flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+          className="group flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Project
+          <span className="p-1 rounded-full bg-zinc-100 dark:bg-zinc-900 group-hover:bg-zinc-200 dark:group-hover:bg-zinc-800 transition-colors">
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </span>
+          Back to Deployments
         </button>
 
-        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] shadow-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-zinc-200 dark:border-zinc-800">
-            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-              Deployment {deploymentId.slice(0, 8)}
-            </h1>
-            {deployment && (
-              <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-zinc-500">
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  {formatTimeAgo(deployment.createdAt)}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <GitBranch className="w-4 h-4" />
-                  {deployment.sourceBranch ?? "—"}
-                </span>
-                <span className="rounded-md border border-zinc-200 dark:border-zinc-700 px-2 py-1 text-xs uppercase tracking-wide">
-                  {deployment.status}
-                </span>
-                <span
-                  className={`rounded-md px-2 py-1 text-xs font-medium ${
-                    streamConnected
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-                      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-                  }`}
-                >
-                  Stream {streamConnected ? "connected" : "connecting"}
-                </span>
-              </div>
-            )}
+        {loading && (
+          <div className="flex flex-col items-center justify-center p-20 animate-in fade-in duration-500">
+            <LoaderCircle className="w-8 h-8 text-zinc-400 animate-spin mb-4" />
+            <p className="text-zinc-500">Loading Deployment Data...</p>
           </div>
+        )}
 
-          <div className="p-6 space-y-6">
-            {loading && <p className="text-sm text-zinc-500">Loading deployment...</p>}
-            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-            {deployment?.status === "ready" && (
-              <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                Deployment is ready. Redirecting to project overview...
-              </p>
-            )}
+        {error && (
+          <div className="p-6 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200 animate-in fade-in">
+            {error}
+          </div>
+        )}
 
-            {!loading && !error && deployment && (
-              <>
-                <section className="space-y-3">
-                  <h2 className="font-medium text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
-                    <UserCog className="w-4 h-4" />
-                    Queue and Worker
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Queue Position</p>
-                      <p className="font-semibold">{queuePosition > 0 ? `#${queuePosition}` : "Active / complete"}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Assigned Worker</p>
-                      <p className="font-semibold">{assignedWorker?.id ?? "Waiting for worker"}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Pool Availability</p>
-                      <p className="font-semibold">
-                        {workers.filter((worker) => worker.status === "idle").length} idle / {workers.length} total
-                      </p>
+        {!loading && !error && deployment && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Header & Quick Info block */}
+            <div className="lg:col-span-3">
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] shadow-sm overflow-hidden relative">
+                {/* Glow bar for active builds */}
+                {(deployment.status === "building" || deployment.status === "initializing") && (
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-amber-500 to-emerald-500 animate-pulse" />
+                )}
+                
+                <div className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div>
+                    <h1 className="text-xl md:text-3xl font-bold font-mono tracking-tight flex items-center gap-3">
+                      <TerminalSquare className="w-6 h-6 md:w-8 md:h-8 text-zinc-400" />
+                      {deploymentId}
+                    </h1>
+                    
+                    <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+                      <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded-md">
+                        <Clock className="w-3.5 h-3.5" />
+                        {formatTimeAgo(deployment.createdAt)}
+                      </span>
+                      <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded-md">
+                        <GitBranch className="w-3.5 h-3.5" />
+                        {deployment.sourceBranch ?? "—"}
+                      </span>
+                      <span className={`px-2.5 py-1 rounded-md text-xs uppercase font-bold tracking-wider border ${getStatusColor(deployment.status)}`}>
+                        {deployment.status}
+                      </span>
                     </div>
                   </div>
-                </section>
 
-                <section className="space-y-3">
-                  <h2 className="font-medium text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
-                    <LoaderCircle className="w-4 h-4" />
-                    Build Pipeline
-                  </h2>
-                  {!stages.length ? (
-                    <p className="text-sm text-zinc-500">Waiting for pipeline events...</p>
+                  <div className="flex flex-col items-end gap-2 text-right">
+                     <span
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium border ${
+                        streamConnected
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-500/10 dark:text-emerald-300"
+                          : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+                      }`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${streamConnected ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"}`} />
+                      Stream {streamConnected ? "Connected" : "Connecting..."}
+                    </span>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-500 max-w-[200px] truncate">
+                      {deployment.commitMessage ?? "Manual triggers do not have commit info over here normally. "}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Left Column: Build Tools */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Build Logs Terminal */}
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-[#FAFAFA] dark:bg-[#0A0A0A] shadow-sm overflow-hidden flex flex-col min-h-[400px] max-h-[600px]">
+                <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] flex items-center justify-between sticky top-0 z-10">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-zinc-500" />
+                    <h2 className="text-sm font-semibold">Build Logs</h2>
+                  </div>
+                  {runningStage && (
+                    <div className="text-xs text-zinc-500 flex items-center gap-2">
+                      <LoaderCircle className="w-3 h-3 animate-spin"/> {runningStage.label}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex-1 p-4 md:p-6 overflow-y-auto font-mono text-xs md:text-sm bg-zinc-50 dark:bg-[#0A0A0A] relative">
+                  {!logs.length ? (
+                    <div className="h-full flex flex-col items-center justify-center text-zinc-400 space-y-3">
+                      <LoaderCircle className="w-6 h-6 animate-spin opacity-50" />
+                      <p>Awaiting worker connection...</p>
+                    </div>
                   ) : (
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {stages.map((stage) => (
-                        <div key={stage.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                          <span className="font-medium">{stage.label}</span>
+                    <div className="space-y-1.5">
+                      {logs.map((line, index) => (
+                        <div key={`${line.timestamp}-${index}`} className="flex gap-3 hover:bg-zinc-100 dark:hover:bg-zinc-900/50 px-2 py-0.5 rounded transition-colors group">
+                          <span className="text-zinc-400 dark:text-zinc-600 shrink-0 select-none hidden md:block">
+                            {new Date(line.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}
+                          </span>
                           <span
-                            className={`text-xs px-2 py-1 rounded-md ${
-                              stage.status === "completed"
-                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-                                : stage.status === "running"
-                                  ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 animate-pulse"
-                                  : stage.status === "error"
-                                    ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
-                                    : "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                            className={`shrink-0 w-8 select-none ${
+                              line.level === "error"
+                                ? "text-rose-500"
+                                : line.level === "warn"
+                                  ? "text-amber-500"
+                                  : line.level === "success"
+                                    ? "text-emerald-500"
+                                    : "text-blue-500"
                             }`}
                           >
-                            {stage.status}
+                            [{line.level.charAt(0).toUpperCase()}]
                           </span>
+                          <span className="text-zinc-700 dark:text-zinc-300 break-all">{line.message}</span>
                         </div>
                       ))}
+                      <div ref={bottomLogsRef} className="h-1" />
                     </div>
                   )}
-                  {runningStage && (
-                    <p className="text-xs text-zinc-500">Currently running: {runningStage.label}</p>
-                  )}
-                </section>
+                </div>
+              </div>
 
-                <section className="space-y-3">
-                  <h2 className="font-medium text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
-                    <TerminalSquare className="w-4 h-4" />
-                    Live Logs
+              {/* Advanced Configuration Accordion or Details */}
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-zinc-200 dark:border-zinc-800">
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-zinc-500" />
+                    Execution Configuration
                   </h2>
-                  <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-950 p-3 font-mono text-xs text-zinc-100 h-56 overflow-auto space-y-2">
-                    {!logs.length ? (
-                      <p className="text-zinc-400">No logs yet. Waiting for worker output...</p>
-                    ) : (
-                      logs.map((line, index) => (
-                        <div key={`${line.timestamp}-${index}`} className="flex gap-2">
-                          <span className="text-zinc-500">{new Date(line.timestamp).toLocaleTimeString()}</span>
-                          <span
-                            className={
-                              line.level === "error"
-                                ? "text-rose-400"
-                                : line.level === "warn"
-                                  ? "text-amber-400"
-                                  : line.level === "success"
-                                    ? "text-emerald-400"
-                                    : "text-blue-400"
-                            }
-                          >
-                            [{line.level.toUpperCase()}]
-                          </span>
-                          <span>{line.message}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
-
-                <section className="space-y-3">
-                  <h2 className="font-medium text-zinc-900 dark:text-zinc-100 inline-flex items-center gap-2">
-                    <Settings className="w-4 h-4" />
-                    Saved Setup
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Project Name</p>
-                      <p className="font-medium">{deployment.config?.projectName ?? "—"}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Framework</p>
-                      <p className="font-medium">{deployment.config?.frameworkPreset ?? "—"}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Root Directory</p>
-                      <p className="font-medium font-mono">{deployment.config?.rootDirectory ?? "—"}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Build Command</p>
-                      <p className="font-medium font-mono">{deployment.config?.buildCommand ?? "—"}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Output Directory</p>
-                      <p className="font-medium font-mono">{deployment.config?.outputDirectory ?? "—"}</p>
-                    </div>
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-                      <p className="text-zinc-500">Install Command</p>
-                      <p className="font-medium font-mono">{deployment.config?.installCommand ?? "—"}</p>
+                </div>
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-zinc-500 font-semibold mb-1 block">Root Directory</label>
+                    <div className="font-mono text-sm bg-zinc-50 dark:bg-zinc-900 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300">
+                      {deployment.config?.rootDirectory ?? "./"}
                     </div>
                   </div>
-                </section>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-zinc-500 font-semibold mb-1 block">Framework</label>
+                    <div className="font-sans text-sm bg-zinc-50 dark:bg-zinc-900 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300">
+                      {deployment.config?.frameworkPreset ?? "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-zinc-500 font-semibold mb-1 block">Install Command</label>
+                    <div className="font-mono text-sm bg-zinc-50 dark:bg-zinc-900 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 truncate" title={deployment.config?.installCommand ?? "—"}>
+                      {deployment.config?.installCommand ?? "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-zinc-500 font-semibold mb-1 block">Build Command</label>
+                    <div className="font-mono text-sm bg-zinc-50 dark:bg-zinc-900 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 truncate" title={deployment.config?.buildCommand ?? "—"}>
+                      {deployment.config?.buildCommand ?? "—"}
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs uppercase tracking-wider text-zinc-500 font-semibold mb-1 block">Output Directory</label>
+                    <div className="font-mono text-sm bg-zinc-50 dark:bg-zinc-900 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300">
+                      {deployment.config?.outputDirectory ?? "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                <section className="space-y-3">
-                  <h2 className="font-medium text-zinc-900 dark:text-zinc-100">Environment Variables</h2>
-                  {!deployment.environmentVars.length ? (
-                    <p className="text-sm text-zinc-500">No environment variables saved.</p>
+            {/* Right Column: Pipeline & Instance Info */}
+            <div className="space-y-6">
+              {/* Build Pipeline */}
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-zinc-200 dark:border-zinc-800">
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                    <Box className="w-4 h-4 text-zinc-500" />
+                    Pipeline Stages
+                  </h2>
+                </div>
+                <div className="p-6">
+                  {!stages.length ? (
+                    <div className="text-sm text-zinc-500 text-center py-6">
+                      Waiting for pipeline to init...
+                    </div>
                   ) : (
-                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {deployment.environmentVars.map((entry, index) => (
-                        <div key={`${entry.key}-${index}`} className="px-4 py-3 flex justify-between gap-3 text-sm">
-                          <span className="font-mono">{entry.key}</span>
-                          <span className="font-mono text-zinc-500 truncate">{entry.value}</span>
+                    <div className="relative space-y-6 before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:w-0.5 before:h-full before:bg-zinc-200 dark:before:bg-zinc-800 before:z-0">
+                      {stages.map((stage, i) => (
+                        <div key={stage.id} className="relative flex items-center justify-between z-10 bg-white dark:bg-[#111]">
+                          <div className="flex items-center gap-4">
+                            <div className="bg-white dark:bg-[#111] rounded-full">
+                              {getStageIcon(stage.status)}
+                            </div>
+                            <span className={`text-sm font-medium ${stage.status === 'completed' ? 'text-zinc-900 dark:text-zinc-100' : stage.status === 'running' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500'}`}>
+                              {stage.label}
+                            </span>
+                          </div>
+                          
+                          {stage.status === 'running' && (
+                            <span className="text-[10px] uppercase font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded animate-pulse">Running</span>
+                          )}
+                          {stage.status === 'completed' && (
+                            <span className="text-[10px] uppercase font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">Done</span>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
-                </section>
-              </>
-            )}
+                </div>
+              </div>
+
+              {/* Infrastructure Stats */}
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-zinc-200 dark:border-zinc-800">
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                    <Server className="w-4 h-4 text-zinc-500" />
+                    Infrastructure
+                  </h2>
+                </div>
+                <div className="p-6 space-y-4 text-sm">
+                  <div className="flex justify-between items-center pb-4 border-b border-zinc-100 dark:border-zinc-800/50">
+                    <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                      <Hash className="w-4 h-4" /> Queue Pos
+                    </div>
+                    <span className="font-mono font-medium">
+                      {queuePosition > 0 ? `#${queuePosition}` : "Complete/Active"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center pb-4 border-b border-zinc-100 dark:border-zinc-800/50">
+                    <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                      <UserCog className="w-4 h-4" /> Assigned Node
+                    </div>
+                    <span className="font-mono max-w-[120px] truncate text-right">
+                      {assignedWorker?.id ?? "Pending"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+                      <Database className="w-4 h-4" /> Active Nodes
+                    </div>
+                    <span>
+                      {workers.filter((worker) => worker.status === "idle").length} Idle / {workers.length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Environment Variables */}
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#111] shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-zinc-200 dark:border-zinc-800">
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                     Environment
+                  </h2>
+                </div>
+                <div className="p-6 max-h-[300px] overflow-y-auto">
+                  {!deployment.environmentVars.length ? (
+                    <p className="text-xs text-zinc-500 text-center">No environment variables exposed.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {deployment.environmentVars.map((entry, index) => (
+                        <div key={`${entry.key}-${index}`} className="flex flex-col bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
+                          <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 mb-1 truncate">{entry.key}</span>
+                          <div className="text-xs font-mono text-zinc-500 bg-zinc-200 dark:bg-[#0A0A0A] p-2 rounded truncate select-all border border-zinc-300 dark:border-zinc-800">
+                            {entry.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );
