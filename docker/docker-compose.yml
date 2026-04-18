@@ -1,0 +1,43 @@
+# Local infrastructure for OpenDeploy (Redis for BullMQ, PostgreSQL for Prisma).
+# From repo root: docker compose -f docker/docker-compose.yml up -d
+#
+# Then in apps/server/.env set:
+#   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/opendeploy?schema=public"
+#   REDIS_URL="redis://localhost:6379"
+# Or omit REDIS_URL and use REDIS_HOST=127.0.0.1 REDIS_PORT=6379
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: opendeploy-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: opendeploy-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: opendeploy
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d opendeploy"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:
+  postgres-data:

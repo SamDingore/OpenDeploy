@@ -81,6 +81,10 @@ model Deployment {
   commitMessage   String?
   deployedBy      String?
   buildDurationMs Int?
+  /// Persisted deployment pipeline log lines (JSON array) for replay after restart.
+  streamLogs      Json              @default("[]")
+  /// Persisted pipeline stage progress (JSON array) for replay after restart.
+  streamStages    Json              @default("[]")
   config          DeploymentConfig?
   environmentVars DeploymentEnvVar[]
   createdAt       DateTime          @default(now())

@@ -1,38 +1,6 @@
-import { config } from 'dotenv';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
+import './env-bootstrap';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-
-function isServerPackageRoot(dir: string): boolean {
-  return (
-    existsSync(resolve(dir, 'package.json')) &&
-    existsSync(resolve(dir, 'prisma', 'schema.prisma'))
-  );
-}
-
-/**
- * Nest emits `dist/src/main.js`, so a single `../.env` would resolve to `dist/.env`.
- * Resolve the real server package directory, then load `.env` and optional `.env.local`.
- */
-function loadEnv(): void {
-  const candidates = [
-    resolve(__dirname, '..', '..'),
-    resolve(__dirname, '..'),
-    process.cwd(),
-  ];
-  const root = candidates.find(isServerPackageRoot) ?? process.cwd();
-  const base = resolve(root, '.env');
-  const local = resolve(root, '.env.local');
-  if (existsSync(base)) {
-    config({ path: base });
-  }
-  if (existsSync(local)) {
-    config({ path: local, override: true });
-  }
-}
-
-loadEnv();
 
 function parseExtraOrigins(): string[] {
   const raw = process.env.WEB_APP_URLS?.trim();
@@ -66,7 +34,10 @@ async function bootstrap() {
   const isProd = process.env.NODE_ENV === 'production';
 
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!origin) {
         callback(null, true);
         return;
@@ -87,4 +58,8 @@ async function bootstrap() {
 
   await app.listen(process.env.PORT ?? 4000);
 }
-bootstrap();
+
+bootstrap().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

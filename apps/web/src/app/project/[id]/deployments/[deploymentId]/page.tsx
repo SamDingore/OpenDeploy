@@ -21,6 +21,19 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+type Stage = {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "completed" | "error";
+  updatedAt: string;
+};
+
+type LogLine = {
+  timestamp: string;
+  level: "info" | "warn" | "error" | "success";
+  message: string;
+};
+
 type DeploymentDetails = {
   id: string;
   projectId: string;
@@ -39,6 +52,10 @@ type DeploymentDetails = {
     installCommand: string | null;
   } | null;
   environmentVars: Array<{ key: string; value: string }>;
+  /** Persisted pipeline logs (from DB); live stream may append more while running. */
+  logs?: LogLine[];
+  /** Persisted stage progress (from DB); live stream may update while running. */
+  stages?: Stage[];
 };
 
 type WorkerState = {
@@ -46,19 +63,6 @@ type WorkerState = {
   status: "idle" | "busy";
   currentDeploymentId: string | null;
   updatedAt: string;
-};
-
-type Stage = {
-  id: string;
-  label: string;
-  status: "pending" | "running" | "completed" | "error";
-  updatedAt: string;
-};
-
-type LogLine = {
-  timestamp: string;
-  level: "info" | "warn" | "error" | "success";
-  message: string;
 };
 
 type DeploymentStreamEvent =
@@ -169,6 +173,12 @@ export default function DeploymentDetailsPage() {
         }
         const data = (await res.json()) as { deployment: DeploymentDetails };
         setDeployment(data.deployment);
+        if (data.deployment.stages && data.deployment.stages.length > 0) {
+          setStages(data.deployment.stages);
+        }
+        if (data.deployment.logs && data.deployment.logs.length > 0) {
+          setLogs(data.deployment.logs);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load deployment.");
       } finally {

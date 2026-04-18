@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { ClerkProvider, Show, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs'
 import { Geist, Geist_Mono } from 'next/font/google'
+import Link from 'next/link'
+import { Settings } from 'lucide-react'
 import './globals.css'
 
 const geistSans = Geist({
@@ -27,7 +29,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ClerkProvider>
-          <header className="flex justify-end items-center p-4 gap-4 h-16">
+          <header className="flex justify-end items-center p-4 gap-4 h-16 border-b border-zinc-200/50 dark:border-zinc-800/50 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-xl sticky top-0 z-50">
             <Show when="signed-out">
               <SignInButton />
               <SignUpButton>
@@ -37,6 +39,13 @@ export default function RootLayout({
               </SignUpButton>
             </Show>
             <Show when="signed-in">
+              <Link 
+                href="/settings" 
+                className="p-2 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors bg-zinc-100 dark:bg-zinc-900 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                aria-label="Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </Link>
               <UserButton />
             </Show>
           </header>

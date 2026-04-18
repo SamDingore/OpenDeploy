@@ -14,28 +14,13 @@ import type { Request, Response } from 'express';
 import { CurrentClerkAuth } from '../../auth/clerk-auth.decorator';
 import { ClerkAuthGuard } from '../../auth/clerk-auth.guard';
 import type { ClerkJwtPayload } from '../../auth/clerk-auth.types';
-import type { DeploymentStatus } from '../../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  parseStoredStreamLogs,
+  parseStoredStreamStages,
+} from './deployment/deployment-stream-persist.util';
+import { deploymentStatusToApi } from './deployment/deployment-status.util';
 import { DeploymentOrchestratorService } from './deployment-orchestrator.service';
-
-function deploymentStatusToApi(status: DeploymentStatus): string {
-  switch (status) {
-    case 'READY':
-      return 'ready';
-    case 'ERROR':
-      return 'error';
-    case 'BUILDING':
-      return 'building';
-    case 'QUEUED':
-      return 'queued';
-    case 'INITIALIZING':
-      return 'initializing';
-    case 'CANCELLED':
-      return 'cancelled';
-    default:
-      return 'queued';
-  }
-}
 
 type ImportGithubProjectBody = {
   githubRepoId?: string | number;
@@ -234,7 +219,7 @@ export class ProjectsController {
         },
       },
     });
-    this.deploymentOrchestrator.enqueue(deployment.id);
+    await this.deploymentOrchestrator.enqueue(deployment.id);
 
     return {
       deployment: {
@@ -296,6 +281,8 @@ export class ProjectsController {
           key: entry.key,
           value: entry.value,
         })),
+        logs: parseStoredStreamLogs(deployment.streamLogs),
+        stages: parseStoredStreamStages(deployment.streamStages),
       },
     };
   }

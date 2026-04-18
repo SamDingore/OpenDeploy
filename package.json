@@ -10,7 +10,10 @@
     "db:generate": "pnpm --filter server run db:generate",
     "db:migrate": "pnpm --filter server run db:migrate",
     "db:push": "pnpm --filter server run db:push",
-    "db:studio": "pnpm --filter server run db:studio"
+    "db:studio": "pnpm --filter server run db:studio",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["@nestjs/core"],
