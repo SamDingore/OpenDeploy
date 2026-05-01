@@ -2,6 +2,8 @@ import {
   BadRequestException,
   Controller,
   Get,
+  HttpException,
+  Logger,
   Query,
   Res,
   ServiceUnavailableException,
@@ -13,7 +15,58 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CurrentClerkAuth } from '../../auth/clerk-auth.decorator';
 import { ClerkAuthGuard } from '../../auth/clerk-auth.guard';
 import type { ClerkJwtPayload } from '../../auth/clerk-auth.types';
-import { GithubOAuthService, verifyOAuthState } from './github-oauth.service';
+import {
+  GithubHttpError,
+  GithubOAuthService,
+  verifyOAuthState,
+} from './github-oauth.service';
+
+const githubControllerLog = new Logger('GithubController');
+
+function rethrowGithubFailure(
+  err: unknown,
+  logLabel: string,
+  fallbackMessage: string,
+): never {
+  if (err instanceof GithubHttpError) {
+    if (err.status === 401) {
+      throw new BadRequestException(
+        'GitHub access expired or was revoked. Open Settings and reconnect GitHub.',
+      );
+    }
+    if (err.status === 403) {
+      throw new BadRequestException(
+        'GitHub denied this request. If you use SSO with an organization, complete SSO on github.com, or reconnect GitHub from Settings.',
+      );
+    }
+    if (err.status === 404) {
+      throw new BadRequestException(
+        'That GitHub user or organization was not found.',
+      );
+    }
+    if (err.status === 429) {
+      throw new ServiceUnavailableException(
+        'GitHub rate limit exceeded. Try again in a few minutes.',
+      );
+    }
+    if (err.status === 0) {
+      throw new ServiceUnavailableException(
+        'Could not reach GitHub. Check your network and try again.',
+      );
+    }
+    githubControllerLog.warn(
+      `${logLabel}: GitHub HTTP ${err.status} ${(err.responseBody ?? '').slice(0, 400)}`,
+    );
+    throw new ServiceUnavailableException(
+      'GitHub returned an error. Try again or reconnect GitHub from Settings.',
+    );
+  }
+  if (err instanceof HttpException) {
+    throw err;
+  }
+  githubControllerLog.error(err, logLabel);
+  throw new ServiceUnavailableException(fallbackMessage);
+}
 
 function settingsRedirect(query: Record<string, string>): string {
   const base = (process.env.WEB_APP_URL ?? 'http://localhost:3000').replace(
@@ -152,8 +205,12 @@ export class GithubController {
           })),
         ],
       };
-    } catch {
-      throw new ServiceUnavailableException('Unable to load GitHub accounts');
+    } catch (err: unknown) {
+      rethrowGithubFailure(
+        err,
+        'accounts',
+        'Unable to load GitHub accounts',
+      );
     }
   }
 
@@ -197,8 +254,12 @@ export class GithubController {
           updatedAt: repo.updated_at,
         })),
       };
-    } catch {
-      throw new ServiceUnavailableException('Unable to load repositories');
+    } catch (err: unknown) {
+      rethrowGithubFailure(
+        err,
+        'repos',
+        'Unable to load repositories',
+      );
     }
   }
 }

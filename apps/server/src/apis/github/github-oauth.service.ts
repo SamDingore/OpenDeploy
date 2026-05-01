@@ -1,6 +1,17 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 
+/** Thrown when GitHub REST returns a non-success status (token revoked, rate limit, etc.). */
+export class GithubHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly responseBody?: string,
+  ) {
+    super(`GitHub API returned HTTP ${status}`);
+    this.name = 'GithubHttpError';
+  }
+}
+
 const GITHUB_AUTHORIZE = 'https://github.com/login/oauth/authorize';
 const GITHUB_ACCESS_TOKEN = 'https://github.com/login/oauth/access_token';
 
@@ -65,17 +76,24 @@ export function verifyOAuthState(
 @Injectable()
 export class GithubOAuthService {
   private async githubGet<T>(accessToken: string, path: string): Promise<T> {
-    const res = await fetch(`https://api.github.com${path}`, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${accessToken}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    if (!res.ok) {
-      throw new InternalServerErrorException(
-        `github_request_failed:${res.status}`,
+    let res: Response;
+    try {
+      res = await fetch(`https://api.github.com${path}`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${accessToken}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+    } catch (cause) {
+      throw new GithubHttpError(
+        0,
+        cause instanceof Error ? cause.message : 'network_error',
       );
+    }
+    if (!res.ok) {
+      const responseBody = await res.text().catch(() => '');
+      throw new GithubHttpError(res.status, responseBody);
     }
     return (await res.json()) as T;
   }
